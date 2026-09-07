@@ -1,0 +1,12 @@
+# SuperSettingsRenderers, bundled unaltered so the settings page never depends on
+# a separate download. These must come before the player scripts: the renderers
+# have to be registered by the time a group naming one is registered.
+# demoSettings.lua is deliberately not listed; it only adds a demo page.
+MENU: scripts/SuperSettingsRenderers/SuperSlider6.lua
+MENU: scripts/SuperSettingsRenderers/SuperColorPicker4.lua
+MENU: scripts/SuperSettingsRenderers/SuperKeybind2.lua
+MENU: scripts/SuperSettingsRenderers/SuperSelect3.lua
+MENU: scripts/SuperSettingsRenderers/optionalRenderer1.lua
+
+PLAYER: scripts/moonhud/MH_tracker.lua
+PLAYER: scripts/moonhud/MH_hud.lua
