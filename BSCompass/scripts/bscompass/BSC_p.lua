@@ -835,22 +835,5 @@ return {
 	},
 	eventHandlers = {
 		UiModeChanged = UiModeChanged,
-		-- Same event ErnCompass and the HUD transparency mods use, so the two
-		-- fade together if you run both.
-		BSCompass_SetOverlay = function(data)
-			if type(data) == 'table' then interface.setOverlay(data.name, data) end
-		end,
-		BSCompass_ClearOverlay = function(data)
-			if type(data) == 'table' then interface.clearOverlay(data.name) end
-		end,
-		BSCompass_ClearAllOverlays = function()
-			interface.clearAllOverlays()
-		end,
-		HUDTransparencyChange = function(data)
-			if compassHud then
-				compassHud.layout.props.alpha = data.alpha
-				compassHud:update()
-			end
-		end,
 	},
 }

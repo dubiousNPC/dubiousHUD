@@ -814,6 +814,8 @@ input.registerTriggerHandler('ToggleHUD', async:callback(function()
 end))
 
 return {
+	interfaceName = 'MoonHUD',
+	interface = interface,
 	engineHandlers = {
 		onInit = onLoad,
 		onLoad = onLoad,
@@ -824,5 +826,22 @@ return {
 		UiModeChanged = UiModeChanged,
 		MoonTracker_PhaseChanged = onPhaseChanged,
 		MoonTracker_ShadeOfTheRevenant = onPhaseChanged,
+		-- Same event ErnCompass and the HUD transparency mods use, so the two
+		-- fade together if you run both.
+		MoonHUD_SetOverlay = function(data)
+			if type(data) == 'table' then interface.setOverlay(data.name, data) end
+		end,
+		MoonHUD_ClearOverlay = function(data)
+			if type(data) == 'table' then interface.clearOverlay(data.name) end
+		end,
+		MoonHUD_ClearAllOverlays = function()
+			interface.clearAllOverlays()
+		end,
+		HUDTransparencyChange = function(data)
+			if MoonHUD then
+				MoonHUD.layout.props.alpha = data.alpha
+				MoonHUD:update()
+			end
+		end,
 	},
 }
