@@ -371,3 +371,34 @@ to white on anything it cannot parse.
 `dev/check_all.sh` covers the replacement: 24 checks on the colour validator,
 including eight malformed inputs.
 
+
+---
+
+## Presets
+
+The page opens on a **Presets** group.
+
+| Control | Does |
+|---|---|
+| Preset | Applies a whole configuration. `Custom` does nothing. |
+| Save current settings | Writes every setting on the page into Slot 1 or Slot 2, then returns to `--`. |
+
+`Default` sweeps every setting back to its shipped value. `Minimal` and `Daedric`
+are built in and **sparse** — they set only the keys that differ, so anything
+they do not mention is left as you had it.
+
+**Slot 1** and **Slot 2** are yours. Save writes a snapshot of every registered
+setting across all groups; picking the slot under Preset writes it back.
+
+Two implementation notes, in case you extend it:
+
+- Saving goes through a select that resets itself, not a button.
+  SuperSelect3's extra buttons send a **global** event, and these mods ship no
+  global script — a self-resetting select needs neither.
+- Colours are userdata and do not survive being nested in a stored table, so a
+  slot holds them as `#hex:rrggbb` and converts back on load. The detection is
+  by the `asHex` method rather than by `type()`.
+
+`dev/check_all.sh` covers it: 24 checks including cross-group capture, slot
+independence, the colour round trip, `Custom` being inert and `Default`
+sweeping.
