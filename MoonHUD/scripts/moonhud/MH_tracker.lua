@@ -303,6 +303,16 @@ end
 -- Phase change events
 --------------------------------------------------------------------------------
 
+-- Forward declaration for the interface table defined below. It must sit ABOVE
+-- the first function that names it, not merely above the table: a local is in
+-- scope only after its declaring statement. It used to be declared just before
+-- the table, so inside checkForChanges `interface` resolved to an undefined
+-- GLOBAL and the first timer tick raised "attempt to index global 'interface'".
+-- The error also ended runRepeatedly, so phase-change and Shade events stopped
+-- for the whole session -- on every engine version, not only pre-0.52 builds.
+-- dev/test_tracker.lua section 13 now fires the timer to keep this covered.
+local interface
+
 local function checkForChanges()
 	local r = current()
 	if not r then return end
@@ -333,10 +343,7 @@ end
 -- Interface
 --------------------------------------------------------------------------------
 
--- Forward declaration: the methods below call each other, and a local is only in
--- scope *after* its declaring statement finishes.
-local interface
-
+-- Declared above checkForChanges; see the note there.
 interface = {
 	version = C.VERSION,
 

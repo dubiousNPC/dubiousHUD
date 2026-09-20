@@ -812,6 +812,36 @@ local function readAllSettings()
 	end
 end
 
+-- One-time repair of colours stored by an older build. TEXT_COLOR used the
+-- textLine renderer, which stores a hex STRING; it now uses SuperColorPicker4,
+-- whose contract is util.color. Player storage outlives saves, so a profile
+-- that ever used the old build still holds the string. normalise() hides that
+-- from the HUD, but the menu renderer receives the raw value and fails with
+-- "attempt to call method 'asHex' (a nil value)", leaving the setting
+-- unrenderable. Rewrite the stored value once, and say so.
+--
+-- Runs before the subscriptions below exist, so these writes do not re-enter
+-- the change handler. Skipped under the textLine renderer, where a string IS
+-- the correct stored form. Until the first game load runs this, the main-menu
+-- settings page still shows the old error; that cannot be fixed from here
+-- without editing the shared renderer, which other mods bundle byte-identical.
+local function migrateLegacyColours()
+	if R_COLOR == 'textLine' then return end
+	for _, template in pairs(settingsTemplate) do
+		local section = storage.playerSection(template.key)
+		for _, entry in pairs(template.settings) do
+			local v = section:get(entry.key)
+			if COLOR_KEYS[entry.key] and type(v) == 'string' then
+				local c = normalise(entry.key, v)
+				section:set(entry.key, c)
+				print(('[MoonHUD] %s was stored as the string %q by an older build; '
+					.. 'converted to colour %s'):format(entry.key, v, c:asHex()))
+			end
+		end
+	end
+end
+
+migrateLegacyColours()
 readAllSettings()
 
 for _, template in pairs(settingsTemplate) do
