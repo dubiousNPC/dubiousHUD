@@ -51,7 +51,10 @@ stubs['openmw.types']  = {}
 stubs['openmw.async']  = { callback = function(f) return f end }
 stubs['openmw_aux.time'] = {
 	day = DAY, hour = HOUR, minute = 60, second = 1, GameTime = 'GameTime',
-	runRepeatedly = function() return function() end end,
+	-- Captures the callback so section 13 can fire it. Previously this returned
+	-- a no-op stopper and discarded fn, so checkForChanges never ran offline --
+	-- which is how it shipped reading an undeclared `interface` global.
+	runRepeatedly = function(fn) TIMER_FN = fn; return function() end end,
 }
 -- Morrowind calendar: 365 days, fixed month lengths, no leap years.
 local ML = { 31,28,31,30,31,30,31,31,30,31,30,31 }
@@ -388,6 +391,31 @@ check(rc.active == true, 'reconfigured anchor works')
 SIM.gameTime = (C.absoluteDay(428, 1, 7) - (MCUM[8] + 16)) * DAY + 12 * HOUR
 check(I3.getShade().active == false, 'the next day is not active under the new interval')
 I3.setShadeConfig { ANCHOR_DAY = 27, ANCHOR_MONTH = 8, INTERVAL_DAYS = 8 }
+
+
+print('=== 13. the phase-change timer callback actually runs ===')
+-- onInit hands checkForChanges to time.runRepeatedly. In game the first call
+-- is immediate (initialDelay = 0); an error there also ends the repetition,
+-- so every later phase-change and Shade event is lost for the session.
+stubs['openmw.core'].weather.getCurrentMoons = nil   -- 0.51: no moon binding
+package.loaded['scripts.moonhud.MH_tracker'] = nil
+TIMER_FN = nil
+local T4 = require('scripts.moonhud.MH_tracker')
+local sent = {}
+stubs['openmw.self'].sendEvent = function(_, name, data) sent[#sent + 1] = { name = name, data = data } end
+T4.engineHandlers.onInit(nil)
+check(type(TIMER_FN) == 'function', 'onInit registered a repeating callback')
+-- 26 Last Seed (day 10): the day before a Shade. Then step onto 27 Last Seed.
+SIM.gameTime = 10 * DAY + 12 * HOUR
+local ok, err = pcall(TIMER_FN)
+check(ok, 'first tick runs without error' .. (ok and '' or (': ' .. tostring(err))))
+SIM.gameTime = 11 * DAY + 12 * HOUR
+ok, err = pcall(TIMER_FN)
+check(ok, 'second tick runs without error' .. (ok and '' or (': ' .. tostring(err))))
+local shadeEvents = 0
+for _, e in ipairs(sent) do if e.name == 'MoonTracker_ShadeOfTheRevenant' then shadeEvents = shadeEvents + 1 end end
+check(shadeEvents == 1, 'Shade event fires once on 27 Last Seed, got ' .. shadeEvents)
+stubs['openmw.self'].sendEvent = function() end
 
 print('')
 print(string.format('%d checks, %d failures', checks, fails))

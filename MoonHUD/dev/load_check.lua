@@ -127,6 +127,20 @@ do
 	end
 end
 
+-- SEED is PRESEED without the pin: the value starts in storage and the mod may
+-- overwrite it. Needed to test anything that rewrites stored values (such as
+-- the legacy colour migration), which PRESEED would mask on every read.
+local SEED = {}
+do
+	local raw = os.getenv('SEED')
+	if raw then
+		for pair in raw:gmatch('[^,]+') do
+			local k, v = pair:match('^%s*(%S+)%s*=%s*(.*)$')
+			if k then SEED[k] = tonumber(v) or v end
+		end
+	end
+end
+
 local stubs = {}
 
 stubs['openmw.util'] = {
@@ -202,6 +216,7 @@ stubs['openmw.storage'] = {
 	playerSection = function(key)
 		if storageSections[key] then return storageSections[key] end
 		local sec = { _key = key, _v = {}, _subs = {} }
+		for k, v in pairs(SEED) do sec._v[k] = v end
 		function sec:get(k)
 			if PRESEED[k] ~= nil then return PRESEED[k] end
 			return self._v[k]

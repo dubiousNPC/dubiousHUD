@@ -265,7 +265,7 @@ serving stale data.
 ## Tests
 
 `dev/test_tracker.lua` stubs the OpenMW API and exercises the tracker offline —
-**584 assertions**, covering:
+**588 assertions**, covering:
 
 - the 382-day fixture against the model (761/764 = 99.6%)
 - calibration convergence, including the two-candidate floor
@@ -279,6 +279,7 @@ serving stale data.
   are explicitly *not* Shade days
 - exactly one day in eight over three years, and the annual five-day slide
 - a reconfigured anchor and interval
+- the phase-change timer callback itself, fired twice across a Shade day
 
 Run with any Lua 5.3+:
 
@@ -330,6 +331,38 @@ verified separately. Run it after editing anything under `scripts/`.
 ---
 
 ## Fixes in this revision
+
+**Phase-change and Shade events never fired.** In-game log:
+
+```
+L@0x1[scripts/moonhud/mh_tracker.lua] callTimer failed: Lua error:
+[string "scripts/moonhud/mh_tracker.lua"]:323: attempt to index global 'interface' (a nil value)
+```
+
+`checkForChanges` reads `interface.getShade()`, but `local interface` was
+declared about 30 lines below it. A local is only in scope after its
+declaring statement, so inside that function the name meant an undefined
+global. The first timer tick raised, and the error also ended
+`runRepeatedly`: `MoonTracker_PhaseChanged` and `MoonTracker_ShadeOfTheRevenant`
+were dead for the whole session. This happens on every engine version. It is
+unrelated to the 0.52 moon binding, whose absence the tiered fallback already
+handles.
+
+Fixed by moving the forward declaration above `checkForChanges`. The tests had
+missed it because the `runRepeatedly` stub discarded the callback, so the
+timer never ran offline. The stub now captures it, and `test_tracker.lua`
+section 13 fires it. The old file fails that section at line 323.
+
+**Text Color setting would not render.** Log:
+`Setting TEXT_COLOR renderer "SuperColorPicker4" error: ... attempt to call method 'asHex' (a nil value)`.
+An older build stored `TEXT_COLOR` as a hex string (textLine renderer). Player
+storage outlives saves, so that string was still there. `normalise()` hid it
+from the HUD, but the colour picker receives the raw stored value. On load,
+`migrateLegacyColours()` now rewrites a stored string colour as a real colour
+once and logs that it did. The main-menu page keeps the error until one game
+has loaded, because the fix lives in MoonHUD rather than in the shared
+renderer. Test: `dev/test_legacy_colour.lua` with the harness's new `SEED`
+variable (a stored value the mod may overwrite, unlike `PRESEED`).
 
 **Sizes being ignored.** Images now set `tileH = false, tileV = false`. Without
 them MyGUI draws a texture at its native size and repeats it to fill the widget,
