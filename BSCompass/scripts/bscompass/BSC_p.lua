@@ -67,10 +67,29 @@ local ATLAS_PRESETS = {
 	['BSCompasAtlas_360'] = {
 		path = 'textures/bscompass/BSCompasAtlas_360.png',
 		frames = 360, cols = 30, cell = 88,
-		-- Built with expand_compass_layered against BSCompasEmpty.png, so the
-		-- bezel and glass are bit-identical in every frame and only the needle
-		-- moves. Each needle is the nearest hand-drawn original, so its shading
-		-- still shifts as it turns.
+		-- One texture, whole compass. The housing is a single plate reused
+		-- byte-for-byte in all 360 frames, so bezel and glass cannot wobble; only
+		-- the needle moves. Each needle is the nearest hand-drawn original turned
+		-- by at most 5 degrees, so its shading still shifts as it comes round.
+		--
+		-- The plate is the per-pixel mode of the 36 source frames. The needle
+		-- sweeps, so at every pixel the housing is the majority value and the
+		-- needle cancels out. That also settles the source sheet's own wobble:
+		-- its outer silhouette varied between 5770 and 5952 opaque pixels across
+		-- the 36 frames, and the mode picks one outline and holds it.
+	},
+	['BSCompas_Layered_360'] = {
+		-- Same 360 needles, but shipped as bare art over a three-layer stack:
+		-- plate underneath, needle in the middle, glass dome over the front.
+		-- Recomposites to BSCompasAtlas_360 within half a colour step.
+		path = 'textures/bscompass/BSC_Arrow_360.png',
+		frames = 360, cols = 30, cell = 88,
+		backdrop = 'textures/bscompass/BSC_Plate.png',
+		cover    = 'textures/bscompass/BSC_Glass.png',
+		-- All three layers are authored on the same 88x88 canvas, so the needle
+		-- fills the widget and needs no placement figures of its own.
+		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
+		overlayAspect = 1,
 	},
 	['DBS_CompassARROW'] = {
 		path = 'textures/bscompass/DBS_CompassARROWAtlas.png',
@@ -108,7 +127,8 @@ local ATLAS_PRESETS = {
 	},
 }
 
-local ATLAS_PRESET_ORDER = { 'BSCompasAtlas', 'BSCompasAtlas_360', 'DBS_CompassARROW' }
+local ATLAS_PRESET_ORDER = { 'BSCompasAtlas', 'BSCompasAtlas_360',
+                             'BSCompas_Layered_360', 'DBS_CompassARROW' }
 
 local borderTemplates = require('scripts.bscompass.BSC_border')
 
@@ -170,6 +190,7 @@ function atlasGeometry()
 			cols = preset.cols, cell = preset.cell,
 			invert = preset.invert, headingOffset = preset.headingOffset,
 			backdrop = preset.backdrop, face = preset.face,
+			cover = preset.cover,
 			cardinals = preset.cardinals, overlays = preset.overlays,
 			overlayAnchorX = preset.overlayAnchorX,
 			overlayAnchorY = preset.overlayAnchorY,
@@ -191,6 +212,7 @@ function atlasGeometry()
 		headingOffset = 0,
 		backdrop = orNil(BACKDROP_TEXTURE),
 		face = orNil(FACE_TEXTURE),
+		cover = orNil(COVER_TEXTURE),
 		cardinals = nil, overlays = nil,
 		overlayAnchorX = OVERLAY_ANCHOR_X,
 		overlayAnchorY = OVERLAY_ANCHOR_Y,
@@ -211,6 +233,13 @@ end
 --   backdrop  static frame or housing, fills the widget
 --   face      static dial art, placed and scaled inside the backdrop
 --   arrow     the rotating atlas frame, placed and scaled inside the backdrop
+--   cover     static art drawn OVER the arrow, fills the widget
+--
+-- backdrop and cover are the pair that makes a glazed instrument work: the
+-- housing reads from underneath, the needle turns inside it, and the glass sits
+-- on top catching the light. OVERLAY_LAYER's 'In front' mode lifts the backdrop
+-- above the arrow instead, which is the older single-static-layer way of doing
+-- the same thing and stays for presets that were built around it.
 --
 -- Every layer is sized from COMPASS_SIZE. Previously the arrow owned that figure
 -- and the backdrop was pinned to it, so a 1785px corner texture could not be made
@@ -443,6 +472,11 @@ function createCompassHud()
 			L.faceSize, L.faceSize, L.faceX, L.faceY, FACE_TINT, FACE_ALPHA)
 	end
 
+	-- Top layer. Fills the widget like the backdrop, because a glass dome is
+	-- authored on the same canvas as the housing it sits in.
+	local coverElement = staticLayer('compassCover', geo.cover,
+		L.width, L.height, 0, 0, COVER_TINT, COVER_ALPHA)
+
 	-- Every cardinal and named overlay is built ONCE, hidden, and later toggled
 	-- by visibility and alpha. Creating or destroying elements as they come and
 	-- go would rebuild the tree mid-play; this keeps the update to a props poke.
@@ -543,7 +577,7 @@ function createCompassHud()
 	-- the top instead, for housings with a glass or bezel that should occlude.
 	local hasExtras = next(cardinalElements) ~= nil or next(overlayElements) ~= nil
 	local body = compassImage
-	if backdropElement or faceElement or hasExtras then
+	if backdropElement or faceElement or coverElement or hasExtras then
 		local stack = ui.content {}
 		if OVERLAY_LAYER == 'In front' then
 			if faceElement then stack:add(faceElement) end
@@ -554,6 +588,9 @@ function createCompassHud()
 			if faceElement then stack:add(faceElement) end
 			stack:add(compassImage)
 		end
+		-- The glass goes on last of the static art, so it catches the light over
+		-- a needle that has already been drawn.
+		if coverElement then stack:add(coverElement) end
 		-- Cardinals sit above the arrow so a lit glyph is never hidden by it;
 		-- named overlays sit above everything.
 		for _, el in pairs(cardinalElements) do stack:add(el) end

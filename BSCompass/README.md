@@ -105,6 +105,50 @@ To use your own strip, set **Atlas Path**, **Atlas Tile Count** and **Atlas Tile
 Size**. Any frame count works — 8, 16, 64, 360 — as long as the frames are evenly
 spaced and frame 0 is north.
 
+### The 360-step sheets
+
+Two presets turn the same art in 1° steps instead of 10°. Both are built from
+`BSC_Original_Atlas.png` by `expand_compass.py` in the HUD atlas toolchain, and
+both keep the hand-drawn needles: every tenth frame *is* an original, and the
+nine between it and the next are that original turned by no more than 5°, with
+nearest-neighbour sampling so no pixel gets blurred.
+
+| Preset | Textures | Use it when |
+|---|---|---|
+| **BSCompasAtlas_360** | one 2640 × 1056 sheet | you just want the smooth compass |
+| **BSCompas_Layered_360** | sheet + plate + glass | you want to tint or fade the housing, needle and glazing separately |
+
+`BSCompas_Layered_360` stacks three layers at the same size and origin, so they
+scale together:
+
+```
+BSC_Plate.png       the housing — bezel, rose, sky, no needle and no glass
+BSC_Arrow_360.png   the needle alone, 360 frames, transparent background
+BSC_Glass.png       the glass dome, drawn over the needle
+```
+
+Composited, the three differ from the single sheet by less than half a colour
+step. **Cover Tint** and **Cover Opacity** drive the top layer; drop the opacity
+to take the glare off the glass.
+
+#### Why the earlier 360 sheet wobbled
+
+The first attempt rotated the *whole cell* to make the in-between frames. The 36
+source frames stayed at 0° while everything between them was turned slightly, so
+the bezel snapped back into place every tenth frame — that was the wobble. It
+also resampled every frame, including the ones that were already right, which
+blurred the pixel art throughout.
+
+There is a second, quieter wobble in the source art itself: its outer silhouette
+varies between 5770 and 5952 opaque pixels across the 36 frames, because the rim
+was drawn slightly differently each time. Both sheets are built on a single
+housing derived as the per-pixel mode of all 36 frames, so the bezel deviates by
+**0** across all 360 frames and the silhouette is a constant 5928 px.
+
+The supplied `BSCompasEmpty.png` is *not* used for this, and can't be — it
+differs from the atlas frames by up to 255 in the bezel, so it was redrawn rather
+than subtracted and does not line up.
+
 ### Which way does it turn?
 
 The mapping is:

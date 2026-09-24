@@ -59,6 +59,10 @@ end
 local record = {
 	groups = {}, pages = {}, textures = {}, subscriptions = 0,
 	triggers = {}, warnings = {}, bundledUsed = {}, renderers = {},
+	-- Every ui.create result, in creation order. The widgets themselves are
+	-- locals inside the mod, so this is the only handle the check has on the
+	-- tree that was actually built.
+	elements = {},
 }
 
 -- Renderers OpenMW ships with. Anything else has to come from another mod, and
@@ -179,6 +183,7 @@ stubs['openmw.ui'] = {
 	_getMenuTransparency = function() return 0.7 end,
 	create = function(layout)
 		local e = { layout = layout }
+		record.elements[#record.elements + 1] = e
 		function e:update() end
 		function e:destroy() end
 		return e
@@ -441,6 +446,19 @@ for i = 2, #arg do
 					print('  onInit ok')
 				end
 			end
+			-- onLoad is what actually builds the widget tree. Without it the
+			-- check only proved the file parses and registers its settings;
+			-- createCompassHud, layerGeometry and every layer path went
+			-- untested for every preset.
+			if h.onLoad then
+				local okL, err = pcall(h.onLoad, nil)
+				if not okL then
+					failures = failures + 1
+					print('  onLoad ERROR: ' .. tostring(err))
+				else
+					print('  onLoad ok')
+				end
+			end
 			if h.onFrame then
 				local ok3, err = pcall(h.onFrame)
 				if not ok3 then
@@ -513,7 +531,18 @@ end
 -- size and position, so layout can be inspected without launching the game.
 local dumpName = os.getenv('DUMP_TREE')
 if dumpName then
-	local rootEl = _G[dumpName]
+	-- DUMP_TREE=* walks every created element; a name walks the one whose
+	-- layout carries it. It used to read _G[name], which was always nil because
+	-- the mod keeps its widgets local, so this printed nothing whatever it was
+	-- given.
+	local roots = {}
+	for _, e in ipairs(record.elements) do
+		local lay = e.layout
+		if dumpName == '*' or (type(lay) == 'table' and lay.name == dumpName) then
+			roots[#roots + 1] = e
+		end
+	end
+	local rootEl = roots[1]
 	local function walk(node, depth)
 		if type(node) ~= 'table' then return end
 		local pad = string.rep('  ', depth)

@@ -278,11 +278,15 @@ settingsTemplate[key] = {
 				.. 'frame count, column count and cell size, so they cannot be mismatched.\n\n'
 				.. 'BSCompasAtlas       36 steps, 10 degrees apart, vertical strip\n'
 				.. 'BSCompasAtlas_360   360 steps, 1 degree apart, 30-column grid\n'
+				.. 'BSCompas_Layered_360  the same 360 steps split into plate,\n'
+				.. '                    needle and glass dome, so each can be\n'
+				.. '                    tinted or faded on its own\n'
 				.. 'DBS_CompassARROW    360 steps, arrow over the DBS corner frame\n'
 				.. 'Custom              use the manual settings below',
 			renderer = R_SELECT,
 			default = 'BSCompasAtlas',
 			argument = selectArg { 'BSCompasAtlas', 'BSCompasAtlas_360',
+			                       'BSCompas_Layered_360',
 			                       'DBS_CompassARROW', 'Custom' },
 		},
 		{
@@ -351,6 +355,31 @@ settingsTemplate[key] = {
 				.. 'under the rotating arrow. Leave empty for none.',
 			renderer = 'textLine',
 			default = '',
+		},
+		{
+			key = 'COVER_TEXTURE',
+			name = 'Cover Texture (Custom)',
+			description = 'Top layer: glass, glazing or bezel art drawn OVER the\n'
+				.. 'rotating arrow. Fills the widget. Leave empty for none.\n'
+				.. 'The layered 360 preset sets this for you.',
+			renderer = 'textLine',
+			default = '',
+		},
+		{
+			key = 'COVER_TINT',
+			name = 'Cover Tint',
+			description = 'Multiplied over the cover art. White leaves it untouched.',
+			renderer = R_COLOR,
+			default = colorDefault('FFFFFF'),
+			argument = { presetColors = presetColors },
+		},
+		{
+			key = 'COVER_ALPHA',
+			name = 'Cover Opacity',
+			description = 'Drop this to take the glare off the glass.',
+			renderer = R_SLIDER,
+			default = 1.0,
+			argument = sliderArg(0, 1, 0.05, '', 1.0),
 		},
 		{
 			key = 'FACE_ANCHOR_X',
@@ -747,11 +776,20 @@ readAllSettings()
 local REBUILD = {
 	HUD_BORDER = true, HUD_BORDER_STYLE = true, HUD_BORDER_COLOR = true,
 	HUD_PADDING = true, HUD_BACKGROUND = true, HUD_LOCK = true,
+	-- The static layers are only read when the tree is built, so their tint and
+	-- opacity need a rebuild to show. They were previously in no class at all,
+	-- which meant dragging those pickers did nothing until some other setting
+	-- happened to force a rebuild. A rebuild, not a retile: re-cutting 360
+	-- textures on every tick of a colour drag is what would actually hurt.
+	OVERLAY_TINT = true, OVERLAY_ALPHA = true,
+	FACE_TINT = true, FACE_ALPHA = true,
+	COVER_TINT = true, COVER_ALPHA = true,
 }
 local RETILE = {
 	ATLAS_PRESET = true, ATLAS_PATH = true, ATLAS_TILES = true,
 	ATLAS_CELL = true, ATLAS_COLUMNS = true,
 	BACKDROP_TEXTURE = true, FACE_TEXTURE = true,
+	COVER_TEXTURE = true,
 	OVERLAY_LAYER = true, OVERLAY_ANCHOR_X = true,
 	OVERLAY_ANCHOR_Y = true, OVERLAY_SCALE = true,
 	FACE_ANCHOR_X = true, FACE_ANCHOR_Y = true, FACE_SCALE = true,
