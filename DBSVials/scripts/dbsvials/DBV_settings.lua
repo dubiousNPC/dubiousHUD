@@ -313,14 +313,16 @@ settingsTemplate.VIALS = {
 		},
 		{
 			key = 'BULB_TEXTURE',
-			name = 'Bulb',
-			description = 'The glass reservoir under the clasp.\n'
-				.. 'VIAL_BOTT_EMPTY is the clean bulb, which is what the dreg is\n'
-				.. 'drawn into. VIAL_CLEAR_GLASS has a dreg of its own baked in, so\n'
-				.. 'turn Dreg off if you pick it or you get two.',
+			name = 'Bulb Backing',
+			description = 'An extra glass reservoir drawn UNDER the liquid.\n'
+				.. 'Off by default: the transparent clasp already carries the\n'
+				.. 'bulb\'s glass, and a second copy behind the liquid thickens\n'
+				.. 'the silhouette. VIAL_BOTT_EMPTY is the bulb as it looks empty,\n'
+				.. 'with its dreg; VIAL_CLEAR_GLASS is the plain glass.',
 			renderer = R_SELECT,
-			default = 'textures/dbsvials/VIAL_BOTT_EMPTY.png',
+			default = '',
 			argument = selectArg {
+				'',
 				'textures/dbsvials/VIAL_BOTT_EMPTY.png',
 				'textures/dbsvials/VIAL_CLEAR_GLASS.png',
 			},
@@ -328,10 +330,10 @@ settingsTemplate.VIALS = {
 		{
 			key = 'CLEAR_CLASP_TEXTURE',
 			name = 'Clear Clasp',
-			description = 'The vessel\'s front glass, drawn OVER the liquid where it\n'
-				.. 'crosses the clasp. This is what makes the liquid read as being\n'
-				.. 'inside the vessel rather than passing in front of the metal.\n'
-				.. 'Blank for none.',
+			description = 'The fitted transparent clasp, drawn OVER the liquid.\n'
+				.. 'Built from VIAL_CLEAR_GLASS + VIAL_CLASP_FRAME, which is what\n'
+				.. 'gives the clasp a glass front the liquid shows through rather\n'
+				.. 'than a solid one it hides behind. Blank for none.',
 			renderer = 'textLine',
 			default = 'textures/dbsvials/VIAL_CLEAR_CLASP.png',
 		},
@@ -354,11 +356,12 @@ settingsTemplate.VIALS = {
 		{
 			key = 'SHOW_RESIDUE',
 			name = 'Dreg',
-			description = 'The settled residue in the bottom of the bulb, tinted with the\n'
-				.. 'vial\'s own colour -- red in the health vial, green in the\n'
-				.. 'stamina one, as in the supplied examples.',
+			description = 'A settled residue in the bottom of the bulb, tinted with the\n'
+				.. 'vial\'s own colour. Off by default: the liquid now runs into\n'
+				.. 'the bulb itself, so a nearly-empty vial already shows a little\n'
+				.. 'of its own colour pooled there and the dreg doubles it.',
 			renderer = 'checkbox',
-			default = true,
+			default = false,
 		},
 		{
 			key = 'RESIDUE_ALPHA',

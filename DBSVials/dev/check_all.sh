@@ -68,8 +68,10 @@ VIAL_SIZE=600,RUNE_HEIGHT=512,RUNE_WIDTH=256
 VIAL_SIZE=24,RUNE_HEIGHT=32,RUNE_WIDTH=8
 SHOW_CLASP=false
 SHOW_CAP=false
-SHOW_RESIDUE=false
-SHOW_CLASP=false,SHOW_CAP=false,SHOW_RESIDUE=false
+SHOW_RESIDUE=true
+BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
+SHOW_CLASP=false,SHOW_CAP=false,SHOW_RESIDUE=true
+BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 CONFIGS
 
@@ -83,10 +85,10 @@ echo "--- vial pieces stay in register at any size"
 for size in 24 95 190 380 600; do
     out=$(PRESEED="VIAL_SIZE=$size" DUMP_TREE=vialsHud "$LUA" dev/load_check.lua . \
         scripts/dbsvials/DBV_p.lua 2>&1)
-    n=$(echo "$out" | grep -cE '^      (clasp|bulb|residue|fill|clear|glass|cap)health')
+    n=$(echo "$out" | grep -cE '^      (clasp|fill|clear|glass|cap)health')
     last=$(echo "$out" | tail -1)
-    if [ "$n" = 7 ] && [ "$last" = OK ]; then
-        printf '  size %-4s OK  (7 pieces)\n' "$size"
+    if [ "$n" = 5 ] && [ "$last" = OK ]; then
+        printf '  size %-4s OK  (5 pieces)\n' "$size"
     else
         printf '  size %-4s FAIL  %s pieces, %s\n' "$size" "$n" "$last"
         fail=1

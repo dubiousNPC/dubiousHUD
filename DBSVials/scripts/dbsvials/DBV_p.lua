@@ -92,6 +92,18 @@ local GLASS_X, GLASS_Y      = 8, 15
 local FILL_X                = 9
 local BASE_X, BASE_Y        = 1, 112
 
+-- The tube's glass is CUT, not drawn whole. Its art is 139 rows and carries a
+-- flared foot at the bottom, but in this vessel the clasp is the termination,
+-- so the tube ends where the clasp begins -- y140 -- and its own foot is never
+-- shown. Drawn whole it runs on to y154 and crosses the clasp, which is the
+-- clipping the example flasks do not have.
+local GLASS_ROWS            = 125
+
+-- The transparent clasp is authored on the whole 40x190 canvas rather than on
+-- the 40x67 the other lower pieces share, so it is placed at the origin.
+local CLEAR_CLASP_W         = 40
+local CLEAR_CLASP_H         = 190
+
 -- The liquid is ONE column running the whole height of the vessel: down the
 -- tube, through the clasp, and into the bulb. That is the change the example
 -- flasks show -- it is not a tube fill sitting on top of a separate bulb.
@@ -125,8 +137,11 @@ local TEX = {
 --   bulb backing        so the bulb is not hollow where no liquid has reached
 --   VIAL_RESIDUE        the dreg, tinted, under the liquid
 --   VIAL_FILL           the liquid
---   VIAL_CLEAR_CLASP    the vessel's front glass over the liquid
---   glass_tube          the tube's own glass
+--   VIAL_CLEAR_CLASP    the fitted transparent clasp, over the liquid.
+--                       Built from VIAL_CLEAR_GLASS + VIAL_CLASP_FRAME, which
+--                       is what gives the clasp a glass front the liquid shows
+--                       through instead of a solid one it hides behind.
+--   glass_tube          the tube's own glass, cut to end at the clasp
 --   VIAL_TOP            the collar
 
 --------------------------------------------------------------------------------
@@ -248,7 +263,16 @@ local function buildTextures()
 		}
 	end
 
-	glassTex       = maybeTexture(GLASS_TEXTURE)
+	-- Cut to the rows that are actually drawn. Handing the widget the whole
+	-- 139-row texture in a 125-row rect would squash it instead of ending it.
+	glassTex = nil
+	if validPath(GLASS_TEXTURE) then
+		glassTex = ui.texture {
+			path   = GLASS_TEXTURE,
+			offset = v2(0, 0),
+			size   = v2(TUBE_W, GLASS_ROWS),
+		}
+	end
 	clearClaspTex  = maybeTexture(CLEAR_CLASP_TEXTURE)
 	claspTex   = SHOW_CLASP ~= false and maybeTexture(TEX.clasp) or nil
 	capTex     = SHOW_CAP ~= false and maybeTexture(TEX.cap) or nil
@@ -401,10 +425,10 @@ local function buildVial(key, colour)
 		FILL_X, FILL_BOTTOM - rows, TUBE_W, math.max(1, rows), colour, 1)
 
 	-- Top: the vessel's front glass, then the tube's, then the collar.
-	p.clearClasp = place('clear' .. key, clearClaspTex, BASE_X, BASE_Y,
-		BASE_W, BASE_H, GLASS_TINT, 1)
+	p.clearClasp = place('clear' .. key, clearClaspTex, 0, 0,
+		CLEAR_CLASP_W, CLEAR_CLASP_H, GLASS_TINT, 1)
 	p.glass = place('glass' .. key, glassTex,
-		GLASS_X, GLASS_Y, TUBE_W, TUBE_H, GLASS_TINT, 1)
+		GLASS_X, GLASS_Y, TUBE_W, GLASS_ROWS, GLASS_TINT, 1)
 	p.cap = place('cap' .. key, capTex, CAP_X, CAP_Y, CAP_W, CAP_H, FITTING_TINT, 1)
 
 	local body = {

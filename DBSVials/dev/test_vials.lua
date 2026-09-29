@@ -99,7 +99,9 @@ end
 
 print('=== 2. the vial is assembled from all six pieces ===')
 for _, key in ipairs { 'health', 'stamina' } do
-	for _, piece in ipairs { 'clasp', 'bulb', 'residue', 'fill', 'clear', 'glass', 'cap' } do
+	-- The five the brief names. The bulb backing and the dreg are optional
+	-- extras and default off, since the transparent clasp carries that glass.
+	for _, piece in ipairs { 'clasp', 'fill', 'clear', 'glass', 'cap' } do
 		check(findNode(piece .. key) ~= nil, piece .. ' present on the ' .. key .. ' vial')
 	end
 end
@@ -116,8 +118,8 @@ do
 	local vial = findNode('healthVial')
 	local pos = {}
 	for i, child in ipairs(vial.content._items) do pos[child.name] = i end
-	local order = { 'clasphealth', 'bulbhealth', 'residuehealth', 'fillhealth',
-	                'clearhealth', 'glasshealth', 'caphealth' }
+	local order = { 'clasphealth', 'fillhealth', 'clearhealth', 'glasshealth',
+	                'caphealth' }
 	local ok = true
 	for i = 2, #order do
 		if not (pos[order[i - 1]] and pos[order[i]] and pos[order[i - 1]] < pos[order[i]]) then
@@ -125,9 +127,25 @@ do
 			print('  out of order: ' .. order[i - 1] .. ' should precede ' .. order[i])
 		end
 	end
-	check(ok, 'clasp, bulb, dreg, liquid, clear clasp, glass, collar')
+	check(ok, 'clasp, liquid, clear clasp, glass, collar')
 	check(pos['clasphealth'] < pos['fillhealth'], 'the clasp is BELOW the liquid')
 	check(pos['clearhealth'] > pos['fillhealth'], 'the clear clasp is ABOVE the liquid')
+end
+do
+	-- The tube's glass ends where the clasp begins. Drawn its full 139 rows it
+	-- runs on past the clasp and clips through it, which is what the example
+	-- flasks do not do.
+	local glassBottom = hglass.props.position.y + hglass.props.size.y
+	local claspTop = hclasp.props.position.y + 24
+	check(glassBottom <= claspTop + 4,
+		string.format('the tube stops at the clasp, not past it (%d vs %d)',
+			glassBottom, claspTop))
+	check(hglass.props.size.y < TUBE_H,
+		'the tube glass is cut short of its full art (' .. hglass.props.size.y .. ' of ' .. TUBE_H .. ')')
+	-- and it must be CUT, not squashed: the texture has to match the rect.
+	local r = hglass.props.resource
+	check(r._size and r._size.y == hglass.props.size.y,
+		'the tube texture is cut to the rows drawn, not stretched into them')
 end
 do
 	-- The liquid is one column for the whole vessel, not a tube fill sitting on
@@ -240,16 +258,30 @@ do
 	check(hf.props.size.y < hFull, '99%% is distinguishable from full')
 end
 
-print('=== 7. the dreg is tinted per vial ===')
--- The supplied examples show a red dreg in the health vial. It is the same
--- texture in both, so the tint is what has to differ.
+print('=== 7. the optional dreg is tinted per vial ===')
+-- Off by default now, but when switched on it has to take each vial's own
+-- colour: it is the same texture in both, so the tint is what differs.
 do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsVials')
+	sec:set('SHOW_RESIDUE', true)
 	local rh, rs = findNode('residuehealth'), findNode('residuestamina')
-	check(rh ~= nil and rs ~= nil, 'both vials have a dreg')
-	check(rh.props.resource._texture == rs.props.resource._texture,
-		'it is the same texture in both')
-	check(tostring(rh.props.color) ~= tostring(rs.props.color),
-		'but tinted differently: ' .. tostring(rh.props.color) .. ' vs ' .. tostring(rs.props.color))
+	check(rh ~= nil and rs ~= nil, 'switching the dreg on adds it to both vials')
+	if rh and rs then
+		check(rh.props.resource._texture == rs.props.resource._texture,
+			'it is the same texture in both')
+		check(tostring(rh.props.color) ~= tostring(rs.props.color),
+			'but tinted differently')
+	end
+	sec:set('SHOW_RESIDUE', false)
+	check(findNode('residuehealth') == nil, 'and switching it off removes it again')
+	-- the tree was rebuilt three times over; re-bind everything
+	rebindRunes()
+	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
+	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+	hclear = findNode('clearhealth')
+	vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
+	base = findNode('runeBase')
 end
 
 print('=== 8. all three rune layers are sliced eight ways ===')

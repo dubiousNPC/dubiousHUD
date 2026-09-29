@@ -48,33 +48,54 @@ liquid running the whole height of it. Drawn lowest first:
 
 ```
 VIAL_CLASP.png         the metal, behind everything
-VIAL_BOTT_EMPTY.png    the bulb's back, so it is not hollow above the liquid
-VIAL_RESIDUE.png       the dreg, tinted, under the liquid
 VIAL_FILL.png          the liquid
-VIAL_CLEAR_CLASP.png   the vessel's front glass, over the liquid
-glass_tube.png         the tube's glass
+VIAL_CLEAR_CLASP.png   the fitted transparent clasp, over the liquid
+glass_tube.png         the tube's glass, cut to end at the clasp
 VIAL_TOP.png           the collar
 ```
 
 The clasp being *under* the liquid is the point. Drawn on top it covers the
 liquid where it passes through, and the vessel reads as a tube sitting on a
-separate bulb rather than one thing. The clear front piece over the liquid is
-what puts it back inside the glass.
+separate bulb rather than one thing.
+
+### The transparent clasp
+
+`VIAL_CLEAR_CLASP.png` is built from two pieces:
+
+```
+VIAL_CLEAR_GLASS.png  +  VIAL_CLASP_FRAME.png
+```
+
+the clear bulb glass with the clasp frame fitted over it. That is what gives the
+clasp a glass front the liquid shows *through*, rather than a solid one it
+disappears behind. The build is in the repo's history rather than done at
+runtime — it is one static texture — and it matches the supplied combination to
+a mean of **0.04** on a 0–255 scale, with 18 pixels of 470 differing by more
+than 8.
+
+Both source pieces ship too, so the composite can be rebuilt if either changes.
+
+### The tube's glass is cut
+
+`glass_tube.png` is 139 rows and carries a flared foot at the bottom, but in
+this vessel the clasp is the termination. The tube is drawn as **125 rows**,
+ending at y140 where the clasp begins; its own foot is never shown. Drawn whole
+it runs on to y154 and clips through the clasp.
+
+It is *cut*, not squeezed — handing the widget the whole 139-row texture in a
+125-row rect would squash it instead of ending it. The suite checks the texture
+that was cut matches the rect it is drawn in.
 
 ### The liquid is one column
 
-It runs the full height: down the tube, through the clasp, and into the bulb.
-So a nearly-empty vial shows a little liquid pooled in the bulb, and draining
-past the clasp is continuous rather than the tube emptying and the bulb staying
-put.
+It runs the full height: down the tube, through the clasp, and into the bulb. So
+a nearly-empty vial shows a little liquid pooled in the bulb, and draining past
+the clasp is continuous rather than the tube emptying and the bulb staying put.
 
-Nothing is hidden at either end — the clasp is underneath the liquid now, and
-the collar sits clear of the top of the travel — so all 139 rows of it are on
-screen. An empty vessel draws no liquid at all rather than a sliver in the foot.
-
-The liquid is **cut, not stretched**: one pre-built texture per fill height,
-showing the bottom N rows of the master. Stretching a single texture would
-squash all 139 rows into however many the fill occupies and distort the taper.
+Nothing is hidden at either end, so all 139 rows of the travel are on screen. An
+empty vessel draws no liquid at all rather than a sliver in the foot. The liquid
+is cut per height the same way the tube glass is, so the taper at the bottom
+keeps its shape at every level.
 
 ### Placement
 
@@ -82,32 +103,31 @@ The assembly is **40 × 190**, and every offset was found by *searching* against
 the supplied example flasks rather than reasoned about:
 
 ```
-VIAL_TOP      (8,   4)     fits the examples bit-exactly
-glass_tube    (8,  15)
-VIAL_FILL     (9,  30)     full; its 7px column lands on x12–18
-base art      (1, 112)     clasp, bulb, dreg and clear clasp share this rect
-liquid foot     y169
+VIAL_TOP          (8,   4)    fits the examples bit-exactly
+glass_tube        (8,  15)    125 rows, ending at the clasp
+VIAL_FILL         (9,  30)    full; its 7px column lands on x12-18
+VIAL_CLASP        (1, 112)
+VIAL_CLEAR_CLASP  (0,   0)    authored on the whole canvas
+liquid foot         y169
 ```
 
 The tube's glass and the liquid it covers **do not share a left edge** — the
 glass sits one pixel to the left of its own column. Reasoning from "they are
 both the tube" puts them together and gets it wrong; the search found it.
 
-The base pieces all sit at one rect because they are already registered against
-each other on their own 40px canvas, so there is nothing to align by hand.
+Against the supplied flasks the assembly matches at a silhouette IoU of
+**0.998–0.999**. By region, the fittings and glass differ by a mean of **15.6**
+on 0–255; the liquid column by **43.1**, because the examples carry more of the
+glass highlight through the liquid than `glass_tube.png` produces over a flat
+colour. That is the one part still not exact.
 
-### `VIAL_CLEAR_CLASP.png`
+### Optional extras, both off by default
 
-This file did not arrive with the examples, so the slot currently points at a
-copy of the clear bulb glass. It is a **setting** (`Clear Clasp`), so dropping
-the real art in at `textures/dbsvials/VIAL_CLEAR_CLASP.png` replaces it with no
-code change.
-
-Against the supplied flasks the assembly currently differs by a mean of about
-**40** on a 0–255 scale, down from 70 before the offsets were searched. The
-silhouette matches at **0.98**. What is left is the liquid's shading: the
-examples carry more of the glass highlight through it than `glass_tube.png`
-produces over a flat colour.
+**Bulb Backing** draws a second reservoir under the liquid, and **Dreg** a
+tinted residue in its foot. Both are off: the transparent clasp already carries
+the bulb's glass, so a backing behind the liquid thickens the silhouette
+(measured: IoU drops from 0.998 to 0.883), and the liquid now pools in the bulb
+itself, so a dreg doubles what is already there.
 
 ### Colours
 
@@ -344,8 +364,11 @@ player:sendEvent('DBSVialsFlashRunes', { seconds = 1.5 })
 - Vial, rune and glow art: **Dubious**.
 - All supplied art ships unmodified: `glass_tube.png`, `VIAL_TOP.png`,
   `VIAL_CLASP.png`, `VIAL_BOTT_EMPTY.png`, `VIAL_CLEAR_GLASS.png`,
-  `VIAL_RESIDUE.png`, `RUNES_x.png`, `GLOW_UP1.png`, `GLOW_UP2.png`,
-  `FLAIR.png`.
+  `VIAL_RESIDUE.png`, `VIAL_CLASP_FRAME.png`, `VIAL_CLEAR_GLASS.png`,
+  `RUNES_x.png`, `GLOW_UP1.png`, `GLOW_UP2.png`, `FLAIR.png`.
+  Two files are derived: `VIAL_FILL.png`, a white master cut to the shape the
+  TUBE pngs define so the colour setting can tint it, and
+  `VIAL_CLEAR_CLASP.png`, the clear glass with the clasp frame fitted over it.
   `VIAL_FILL.png` is the one derived file: a white master cut to the shape the
   TUBE pngs define, so the colour setting can tint it.
 - Stat-tracking approach and the discipline of not redrawing a HUD that has not
