@@ -23,10 +23,8 @@ end
 -- changes one of them, this file is where the disagreement shows up.
 local TUBE_W, TUBE_H     = 13, 139
 local FILL_X0, FILL_X1   = 3, 9          -- the TUBE pngs' liquid column
-local BULB_X0, BULB_X1   = 10, 18        -- the bulb's mouth on the base canvas
-local BASE_TUBE_X        = 8
-local CLASP_OVERLAP      = 12
-local CAP_OVERLAP        = 9
+local FILL_X             = 9             -- where that column sits on the canvas
+local FILL_BOTTOM        = 169
 
 local base
 -- Three layers behind the runes now. A rune is "lit" if it wears either halo.
@@ -101,54 +99,47 @@ end
 
 print('=== 2. the vial is assembled from all six pieces ===')
 for _, key in ipairs { 'health', 'stamina' } do
-	for _, piece in ipairs { 'bulb', 'residue', 'fill', 'glass', 'clasp', 'cap' } do
+	for _, piece in ipairs { 'clasp', 'bulb', 'residue', 'fill', 'clear', 'glass', 'cap' } do
 		check(findNode(piece .. key) ~= nil, piece .. ' present on the ' .. key .. ' vial')
 	end
 end
 
-print('=== 3. the pieces are registered against each other ===')
+print('=== 3. the layers are in the order the art needs ===')
 local hf, hglass, hclasp, hcap = findNode('fillhealth'), findNode('glasshealth'),
 	findNode('clasphealth'), findNode('caphealth')
+local hclear = findNode('clearhealth')
 do
-	-- The liquid column must land inside the bulb's mouth. The tube art puts the
-	-- liquid at x3..x9 of 13, and the tube sits at x8 on the base canvas, so the
-	-- liquid occupies x11..x17 against a mouth of x10..x18.
-	local lx0 = BASE_TUBE_X + FILL_X0
-	local lx1 = BASE_TUBE_X + FILL_X1
-	check(lx0 >= BULB_X0 and lx1 <= BULB_X1,
-		string.format('liquid x%d-%d sits inside the bulb mouth x%d-%d',
-			lx0, lx1, BULB_X0, BULB_X1))
-	-- Stated as relationships rather than pixel values, so they keep meaning at
-	-- any Vial Size. Checking `position.x == 8` would silently become a test of
-	-- the default scale and nothing else.
-	check(hf.props.position.x == hglass.props.position.x,
-		'the fill and the glass share the tube column')
-	check(hf.props.size.x == hglass.props.size.x,
-		'and are the same width')
+	-- The whole point of this revision: the clasp is UNDER the liquid and a
+	-- clear front piece is over it. Drawn the other way round, the metal covers
+	-- the liquid where it passes through and the vessel reads as two parts
+	-- rather than one.
 	local vial = findNode('healthVial')
-	check(hf.props.position.x > 0 and
-		hf.props.position.x + hf.props.size.x < vial.props.size.x,
-		'the tube is inset from the assembly edges, where the bulb is wider')
+	local pos = {}
+	for i, child in ipairs(vial.content._items) do pos[child.name] = i end
+	local order = { 'clasphealth', 'bulbhealth', 'residuehealth', 'fillhealth',
+	                'clearhealth', 'glasshealth', 'caphealth' }
+	local ok = true
+	for i = 2, #order do
+		if not (pos[order[i - 1]] and pos[order[i]] and pos[order[i - 1]] < pos[order[i]]) then
+			ok = false
+			print('  out of order: ' .. order[i - 1] .. ' should precede ' .. order[i])
+		end
+	end
+	check(ok, 'clasp, bulb, dreg, liquid, clear clasp, glass, collar')
+	check(pos['clasphealth'] < pos['fillhealth'], 'the clasp is BELOW the liquid')
+	check(pos['clearhealth'] > pos['fillhealth'], 'the clear clasp is ABOVE the liquid')
 end
 do
-	-- The clasp has to cover where the tube ends, or the join shows.
-	local tubeBottom = hglass.props.position.y + hglass.props.size.y
-	local claspTop = hclasp.props.position.y + 24     -- the diamond starts at y24 of the art
-	local claspBottom = hclasp.props.position.y + 48
-	check(tubeBottom > claspTop and tubeBottom < claspBottom,
-		string.format('the tube ends inside the clasp (tube %d, clasp %d..%d)',
-			tubeBottom, claspTop, claspBottom))
-end
-do
-	-- The collar caps the tube: it must overlap the top, not float above it.
-	local capBottom = hcap.props.position.y + hcap.props.size.y
-	local tubeTop = hglass.props.position.y
-	check(capBottom > tubeTop,
-		string.format('the collar comes down over the tube (collar ends %d, tube starts %d)',
-			capBottom, tubeTop))
-	check(capBottom - tubeTop == CAP_OVERLAP,
-		string.format('by exactly the measured overlap %d, got %d',
-			CAP_OVERLAP, capBottom - tubeTop))
+	-- The liquid is one column for the whole vessel, not a tube fill sitting on
+	-- a separate bulb: it has to reach below the clasp into the bulb.
+	local claspTop = hclasp.props.position.y + 24
+	frame(1, nil, nil)
+	local liqBottom = hf.props.position.y + hf.props.size.y
+	check(liqBottom > claspTop,
+		string.format('the liquid reaches past the clasp into the bulb (%d vs %d)',
+			liqBottom, claspTop))
+	check(hf.props.position.y < hglass.props.position.y + 30,
+		'and reaches up into the tube')
 end
 
 print('=== 3b. the registration holds at a different size ===')
@@ -157,7 +148,7 @@ print('=== 3b. the registration holds at a different size ===')
 do
 	local storage = require('openmw.storage')
 	local sec = storage.playerSection('SettingsDBSVialsVials')
-	for _, size in ipairs { 86, 344 } do
+	for _, size in ipairs { 95, 380 } do
 		sec:set('VIAL_SIZE', size)
 		-- The widgets were destroyed and rebuilt by that write, so everything
 		-- has to be looked up again. Anything cached from before now points at
@@ -167,18 +158,15 @@ do
 		local c, cp = findNode('clasphealth'), findNode('caphealth')
 		check(v.props.size.y == size,
 			string.format('at %d the assembly is %d tall', size, v.props.size.y))
-		check(f.props.position.x == g.props.position.x and f.props.size.x == g.props.size.x,
-			'fill and glass still share the tube column at ' .. size)
-		local tubeBottom = g.props.position.y + g.props.size.y
-		local claspTop = c.props.position.y + math.floor(24 * size / 172)
-		local claspBottom = c.props.position.y + math.floor(48 * size / 172)
-		check(tubeBottom > claspTop and tubeBottom <= claspBottom + 1,
-			string.format('the tube still ends inside the clasp at %d (%d in %d..%d)',
-				size, tubeBottom, claspTop, claspBottom))
+		check(f.props.size.x == g.props.size.x,
+			'liquid and glass are the same width at ' .. size)
+		local claspTop = c.props.position.y + math.floor(24 * size / 190)
+		check(f.props.position.y + f.props.size.y > claspTop,
+			'the liquid still reaches past the clasp at ' .. size)
 		check(cp.props.position.y + cp.props.size.y > g.props.position.y,
 			'the collar still overlaps the tube top at ' .. size)
 	end
-	sec:set('VIAL_SIZE', 172)
+	sec:set('VIAL_SIZE', 190)
 end
 
 -- Re-bind everything the earlier sections captured: the tree above is gone.
@@ -186,6 +174,7 @@ vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
 rebindRunes()
 hf, hglass = findNode('fillhealth'), findNode('glasshealth')
 hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+hclear = findNode('clearhealth')
 base = findNode('runeBase')
 
 print('=== 4. the liquid is cut, not stretched ===')
@@ -194,7 +183,7 @@ print('=== 4. the liquid is cut, not stretched ===')
 -- its own pre-cut texture instead, and the drawn rect must match what was cut.
 do
 	local seen, ok = {}, true
-	for i = 0, 20 do
+	for i = 1, 20 do          -- from 1: an empty vessel draws nothing at all
 		frame(i / 20, nil, nil)
 		local r = hf.props.resource
 		local cutH = r._size and r._size.y
@@ -212,48 +201,43 @@ do
 	check(ok, 'every level draws exactly the rows it cut, from the tube bottom')
 	local n = 0
 	for _ in pairs(seen) do n = n + 1 end
-	check(n > 15, 'the 21 levels produced ' .. n .. ' distinct cuts, not one stretched texture')
+	check(n > 15, 'the 20 levels produced ' .. n .. ' distinct cuts, not one stretched texture')
 end
 
 print('=== 5. the liquid fills from the bottom ===')
 do
 	local prev = -1
 	local ok, anchored = true, true
-	for i = 0, 20 do
+	for i = 1, 20 do
 		frame(i / 20, nil, nil)
 		local bottom = hf.props.position.y + hf.props.size.y
-		local tubeBottom = hglass.props.position.y + hglass.props.size.y
-		if bottom ~= tubeBottom then anchored = false end
+		-- Welded to the foot of the VESSEL now, not the foot of the tube: the
+		-- liquid pools in the bulb.
+		if bottom ~= FILL_BOTTOM then anchored = false end
 		if hf.props.size.y < prev then ok = false end
 		prev = hf.props.size.y
 	end
-	check(anchored, 'the liquid stays welded to the bottom of the tube at every level')
+	check(anchored, 'the liquid stays welded to the foot of the bulb at every level')
 	check(ok, 'the liquid height never goes down as the stat goes up')
 end
 
 print('=== 6. the whole travel is visible ===')
--- The bottom rows sit behind the clasp and the top rows behind the collar. If
--- the travel ran the tube's full length, the difference between 93% and 100%
--- would happen entirely under the collar and be invisible.
+-- Nothing is hidden at either end any more: the clasp is underneath the liquid
+-- and the collar sits clear of the top of the travel.
 do
-	frame(1, nil, nil)
-	local fullTop = hf.props.position.y
-	local capBottom = hcap.props.position.y + hcap.props.size.y
-	check(fullTop >= capBottom - 1,
-		string.format('a full vial stops at the collar, not under it (%d vs %d)',
-			fullTop, capBottom))
 	frame(0, nil, nil)
-	local emptyH = hf.props.size.y
-	check(emptyH <= CLASP_OVERLAP,
-		string.format('an empty vial has nothing showing above the clasp (%d rows)', emptyH))
+	check(hf.props.visible == false, 'an empty vessel draws no liquid at all')
 	frame(0.01, nil, nil)
 	local h1 = hf.props.size.y
-	frame(0.99, nil, nil)
-	local h99 = hf.props.size.y
-	check(h1 > emptyH, '1%% is distinguishable from empty')
-	check(h99 < hf.props.size.y + 1 and h99 > emptyH, '99%% is distinguishable from empty')
+	check(hf.props.visible ~= false and h1 > 0, '1%% shows a little')
 	frame(1, nil, nil)
-	check(hf.props.size.y > h99, '100%% is distinguishable from 99%%')
+	local hFull = hf.props.size.y
+	check(hFull == TUBE_H, 'a full vessel is the whole column, got ' .. hFull)
+	local top = hf.props.position.y
+	local capBottom = hcap.props.position.y + hcap.props.size.y
+	check(top >= capBottom, 'and stops clear of the collar (' .. top .. ' vs ' .. capBottom .. ')')
+	frame(0.99, nil, nil)
+	check(hf.props.size.y < hFull, '99%% is distinguishable from full')
 end
 
 print('=== 7. the dreg is tinted per vial ===')
@@ -492,16 +476,15 @@ do
 	local before = hf.props.size.y
 	frame(0.5 + (0.2 / 139), nil, nil)
 	check(hf.props.size.y == before, 'a fifth-of-a-row change leaves the liquid untouched')
-	frame(0.5 + (3.0 / 118), nil, nil)
+	frame(0.5 + (3.0 / 139), nil, nil)
 	check(hf.props.size.y ~= before, 'a multi-row change does move it')
 end
 
 print('=== 15. stats outside 0..1 are clamped, not propagated ===')
 frame(1.5, nil, nil)
-local capBottom = hcap.props.position.y + hcap.props.size.y
-check(hf.props.position.y >= capBottom - 1, 'overfull health does not overflow past the collar')
+check(hf.props.size.y <= TUBE_H, 'overfull health does not overflow the column')
 frame(-0.5, nil, nil)
-check(hf.props.size.y <= CLASP_OVERLAP, 'negative health reads as empty')
+check(hf.props.visible == false, 'negative health reads as empty')
 frame(nil, nil, 1.5)
 check(litCount() == 8, 'overfull magicka lights eight, not nine')
 frame(nil, nil, -1)

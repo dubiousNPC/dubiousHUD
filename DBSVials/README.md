@@ -43,80 +43,79 @@ They share the stat-reading pass and the frame styling, and nothing else.
 
 ## The vials
 
-Each vial is six pieces, all placed from figures measured off the supplied art:
+Each vial is one vessel — collar, tube, clasp and bulb — with a single column of
+liquid running the whole height of it. Drawn lowest first:
 
 ```
-VIAL_TOP.png          the pronged collar, capping the tube
-glass_tube.png        the glass, drawn over the liquid
-VIAL_FILL.png         the liquid  (derived -- see below)
-VIAL_CLASP.png        the diamond bracket at the junction
-VIAL_BOTT_EMPTY.png   the glass bulb below
-VIAL_RESIDUE.png      the dreg settled in the bulb
+VIAL_CLASP.png         the metal, behind everything
+VIAL_BOTT_EMPTY.png    the bulb's back, so it is not hollow above the liquid
+VIAL_RESIDUE.png       the dreg, tinted, under the liquid
+VIAL_FILL.png          the liquid
+VIAL_CLEAR_CLASP.png   the vessel's front glass, over the liquid
+glass_tube.png         the tube's glass
+VIAL_TOP.png           the collar
 ```
 
-Drawn bulb, dreg, liquid, glass, clasp, collar — the clasp goes over the glass
-because hiding the tube's end is its whole job.
+The clasp being *under* the liquid is the point. Drawn on top it covers the
+liquid where it passes through, and the vessel reads as a tube sitting on a
+separate bulb rather than one thing. The clear front piece over the liquid is
+what puts it back inside the glass.
 
-### The liquid does not span the tube
+### The liquid is one column
 
-The TUBE pngs are a single flat colour occupying **x3..x9** of a 13px canvas. So
-the liquid is 7px wide with 3px of padding either side, and the last two rows
-taper to 5px. That padding is the glass wall; filling the full width, as the
-first version did, makes the tube look like a painted bar instead of a vessel.
+It runs the full height: down the tube, through the clasp, and into the bulb.
+So a nearly-empty vial shows a little liquid pooled in the bulb, and draining
+past the clasp is continuous rather than the tube emptying and the bulb staying
+put.
 
-`VIAL_FILL.png` is a white master cut to exactly that shape, so the colour
-setting tints it. The supplied tubes are one flat colour each, so the shipped
-defaults — `B60000` and `349F00` — reproduce them exactly.
+Nothing is hidden at either end — the clasp is underneath the liquid now, and
+the collar sits clear of the top of the travel — so all 139 rows of it are on
+screen. An empty vessel draws no liquid at all rather than a sliver in the foot.
 
-The liquid is **cut, not stretched**: there is one pre-built texture per fill
-height, showing the bottom N rows of the tube art. Stretching a single texture
-would squash all 139 rows into however many the fill currently occupies, which
-distorts the taper at the bottom. 140 textures, built once at load.
+The liquid is **cut, not stretched**: one pre-built texture per fill height,
+showing the bottom N rows of the master. Stretching a single texture would
+squash all 139 rows into however many the fill occupies and distort the taper.
 
-### How the pieces register
+### Placement
 
-The base art is a 40px canvas holding two pieces already registered against each
-other — the bulb at x10..x18, y24..y58, and the clasp diamond at x2..x28,
-y24..y48. Drawing both at the same rect lines them up by construction; there is
-nothing to align by hand.
-
-The tube sits at **x8** on that canvas, which puts its liquid column inside the
-bulb's mouth with one pixel of glass either side:
+The assembly is **40 × 190**, and every offset was found by *searching* against
+the supplied example flasks rather than reasoned about:
 
 ```
-bulb mouth     x10 .............. x18
-liquid            x11 ........ x17
+VIAL_TOP      (8,   4)     fits the examples bit-exactly
+glass_tube    (8,  15)
+VIAL_FILL     (9,  30)     full; its 7px column lands on x12–18
+base art      (1, 112)     clasp, bulb, dreg and clear clasp share this rect
+liquid foot     y169
 ```
 
-Two overlaps were measured by rendering a sweep rather than guessed:
+The tube's glass and the liquid it covers **do not share a left edge** — the
+glass sits one pixel to the left of its own column. Reasoning from "they are
+both the tube" puts them together and gets it wrong; the search found it.
 
-| | | |
-|---|---|---|
-| **clasp overlap** | 12px | The tube's tapered last rows land behind the clasp's upper edge and the join disappears. At 8 or less the pale taper pokes out above the diamond. |
-| **collar overlap** | 9px | Its dark interior reads as the vial's neck. |
+The base pieces all sit at one rect because they are already registered against
+each other on their own 40px canvas, so there is nothing to align by hand.
 
-Together that makes the assembly **40 × 172** at 1:1, which is the default
-**Vial Size**. One number scales the whole thing, so the fittings keep the
-proportions they were drawn with.
+### `VIAL_CLEAR_CLASP.png`
 
-### The travel is all visible
+This file did not arrive with the examples, so the slot currently points at a
+copy of the clear bulb glass. It is a **setting** (`Clear Clasp`), so dropping
+the real art in at `textures/dbsvials/VIAL_CLEAR_CLASP.png` replaces it with no
+code change.
 
-The bottom 12 rows sit behind the clasp and the top 9 behind the collar. A fill
-that ran the tube's full length would spend 15% of its range on rows nobody can
-see — the difference between 93% and 100% health would happen entirely under the
-collar. So the travel is mapped onto the rows that actually show. An empty vial
-still has those twelve hidden rows filled, behind the clasp, where they read as
-nothing.
+Against the supplied flasks the assembly currently differs by a mean of about
+**40** on a 0–255 scale, down from 70 before the offsets were searched. The
+silhouette matches at **0.98**. What is left is the liquid's shading: the
+examples carry more of the glass highlight through it than `glass_tube.png`
+produces over a flat colour.
 
-### The dreg
+### Colours
 
-`VIAL_RESIDUE.png` is tinted with the vial's own colour, so health keeps a red
-dreg and stamina a green one, as in the supplied examples. It is the same
-texture in both.
+`VIAL_FILL.png` is a white master cut to the shape the TUBE pngs define, so the
+colour setting tints it. The shipped defaults — `B60000` and `349F00` — are the
+supplied tubes' own colours exactly.
 
-**Bulb** offers the two supplied bulbs: `VIAL_BOTT_EMPTY` is the clean one, which
-is what the dreg is drawn into. `VIAL_CLEAR_GLASS` has a dreg of its own baked
-in — pick it and turn **Dreg** off, or you get two.
+**Vial Size** scales the whole assembly by one factor; 190 is the art at 1:1.
 
 ---
 

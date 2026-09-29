@@ -87,7 +87,7 @@ check(sc and sc.asHex and sc:asHex():lower() == 'e0821e',
 
 print('=== 7. Default sweeps everything back ===')
 P:set('PRESET', 'Default')
-check(VIALS:get('VIAL_SIZE') == 172,
+check(VIALS:get('VIAL_SIZE') == 190,
 	'VIAL_SIZE back to default, got ' .. tostring(VIALS:get('VIAL_SIZE')))
 check(ACCESS:get('SHOW_NUMBERS') == false, 'SHOW_NUMBERS back to default')
 local dh = VIALS:get('HEALTH_COLOR')

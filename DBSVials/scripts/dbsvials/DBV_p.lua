@@ -75,37 +75,38 @@ MODNAME = 'DBSVials'
 -- glass either side.
 local TUBE_W, TUBE_H        = 13, 139
 local BASE_W, BASE_H        = 40, 67
-local BODY_TOP, BODY_BOT    = 24, 58
-local BASE_TUBE_X           = 8
 local CAP_W, CAP_H          = 15, 19
-local CAP_X                 = BASE_TUBE_X - 1   -- 15px cap centred on a 13px tube
 
--- How far the tube's bottom reaches past the top of the bulb. At 12 the tube's
--- tapered last rows land behind the clasp's upper edge and the join disappears;
--- at 8 or less the pale taper pokes out above the diamond. Measured by rendering
--- the sweep, not guessed.
-local CLASP_OVERLAP         = 12
+-- Placement on the assembly canvas, taken off the supplied example flasks.
+-- VIAL_TOP lands on them bit-exactly at (8,4), which is what fixed the rest:
+-- the collar is 15 wide over a 13-wide tube, so the tube is at x9, and the
+-- tube's own liquid column (x3..x9 of its 13) then falls on x12..x18 -- exactly
+-- where the green and red examples differ from the empty one.
+local NATURAL_W, NATURAL_H  = 40, 190
+-- Every one of these was found by searching the offset against the supplied
+-- flasks rather than reasoned about, because the tube's glass and its liquid do
+-- not share a left edge -- the glass sits one pixel left of the column it
+-- covers. Reasoning from "they are both the tube" gets that wrong.
+local CAP_X, CAP_Y          = 8, 4
+local GLASS_X, GLASS_Y      = 8, 15
+local FILL_X                = 9
+local BASE_X, BASE_Y        = 1, 112
 
--- How far the collar comes down over the tube's top. At 9 its dark interior
--- reads as the vial's neck.
-local CAP_OVERLAP           = 9
+-- The liquid is ONE column running the whole height of the vessel: down the
+-- tube, through the clasp, and into the bulb. That is the change the example
+-- flasks show -- it is not a tube fill sitting on top of a separate bulb.
+--
+-- It is drawn from the same VIAL_FILL master as before, just placed against the
+-- vessel rather than the tube: 139 rows ending at y168, which is the inside of
+-- the bulb's foot.
+local FILL_BOTTOM           = 169        -- one past the last liquid row
+local FILL_ROWS             = TUBE_H     -- 139, so a full vial reaches y30
 
--- Natural size of the whole assembly, with the cap's top at y0.
-local TUBE_TOP              = CAP_H - CAP_OVERLAP          -- 10
-local TUBE_BOT              = TUBE_TOP + TUBE_H            -- 149
-local BODY_Y                = TUBE_BOT - CLASP_OVERLAP     -- 137
-local BASE_Y                = BODY_Y - BODY_TOP            -- 113
-local NATURAL_H             = BASE_Y + BODY_BOT + 1        -- 172
-local NATURAL_W             = BASE_W                       -- 40
-
--- The liquid's travel. The bottom CLASP_OVERLAP rows sit behind the clasp and
--- the top CAP_OVERLAP rows behind the collar, so a fill that ran the tube's full
--- length would waste 15% of its range on rows nobody can see: the difference
--- between 93% and 100% health would be invisible. Instead the travel is mapped
--- onto the rows that actually show, and an empty vial still has those twelve
--- hidden rows filled -- behind the clasp, where they read as nothing.
-local FILL_MIN              = CLASP_OVERLAP                -- 12
-local FILL_MAX              = TUBE_H - CAP_OVERLAP         -- 130
+-- Nothing is hidden at either end any more. The clasp no longer covers the
+-- liquid -- it is underneath it now -- and the collar sits clear of the top of
+-- the travel, so every row of it is on screen.
+local FILL_MIN              = 0
+local FILL_MAX              = FILL_ROWS
 
 local TEX = {
 	fill    = 'textures/dbsvials/VIAL_FILL.png',
@@ -114,6 +115,19 @@ local TEX = {
 	cap     = 'textures/dbsvials/VIAL_TOP.png',
 	residue = 'textures/dbsvials/VIAL_RESIDUE.png',
 }
+
+-- Draw order, lowest first. The clasp moved to the bottom of the stack and a
+-- clear front piece went on top of the liquid, which is what makes the liquid
+-- read as being *inside* the vessel at the clasp rather than passing in front
+-- of it.
+--
+--   VIAL_CLASP          the metal, behind everything
+--   bulb backing        so the bulb is not hollow where no liquid has reached
+--   VIAL_RESIDUE        the dreg, tinted, under the liquid
+--   VIAL_FILL           the liquid
+--   VIAL_CLEAR_CLASP    the vessel's front glass over the liquid
+--   glass_tube          the tube's own glass
+--   VIAL_TOP            the collar
 
 --------------------------------------------------------------------------------
 -- The runes, in art pixels
@@ -192,7 +206,7 @@ local parts = {
 
 local fillTex   = {}        -- [rows] -> texture showing the bottom `rows` of the tube
 local glow1Tex, glow2Tex, flairTex = {}, {}, {}
-local runeTex, glassTex, claspTex, capTex, residueTex, bulbTex
+local runeTex, glassTex, claspTex, capTex, residueTex, bulbTex, clearClaspTex
 
 local lastHealthRows  = -1
 local lastStaminaRows = -1
@@ -234,7 +248,8 @@ local function buildTextures()
 		}
 	end
 
-	glassTex   = maybeTexture(GLASS_TEXTURE)
+	glassTex       = maybeTexture(GLASS_TEXTURE)
+	clearClaspTex  = maybeTexture(CLEAR_CLASP_TEXTURE)
 	claspTex   = SHOW_CLASP ~= false and maybeTexture(TEX.clasp) or nil
 	capTex     = SHOW_CAP ~= false and maybeTexture(TEX.cap) or nil
 	residueTex = SHOW_RESIDUE ~= false and maybeTexture(TEX.residue) or nil
@@ -368,25 +383,29 @@ local function buildVial(key, colour)
 	-- The bulb and its dreg. The residue is tinted with the vial's own colour,
 	-- so a health vial keeps a red dreg and a stamina vial a green one, which is
 	-- what the supplied examples show.
-	p.bulb = place('bulb' .. key, bulbTex, 0, BASE_Y, BASE_W, BASE_H,
+	-- Lowest: the metal. It used to sit on top, which put it in front of the
+	-- liquid; the example flasks show the liquid crossing it, so it goes under.
+	p.clasp = place('clasp' .. key, claspTex, BASE_X, BASE_Y, BASE_W, BASE_H,
+		FITTING_TINT, 1)
+
+	-- The bulb's back, so it is not hollow above the liquid line.
+	p.bulb = place('bulb' .. key, bulbTex, BASE_X, BASE_Y, BASE_W, BASE_H,
 		BULB_TINT, BULB_ALPHA or 1)
-	p.residue = place('residue' .. key, residueTex, 0, BASE_Y, BASE_W, BASE_H,
+	p.residue = place('residue' .. key, residueTex, BASE_X, BASE_Y, BASE_W, BASE_H,
 		colour, RESIDUE_ALPHA or 1)
 
 	-- The liquid. Position and size are set every time the level changes, so the
 	-- figures here are only the starting state.
 	local rows = FILL_MIN
 	p.fill = place('fill' .. key, fillTex[rows],
-		BASE_TUBE_X, TUBE_BOT - rows, TUBE_W, rows, colour, 1)
+		FILL_X, FILL_BOTTOM - rows, TUBE_W, math.max(1, rows), colour, 1)
 
+	-- Top: the vessel's front glass, then the tube's, then the collar.
+	p.clearClasp = place('clear' .. key, clearClaspTex, BASE_X, BASE_Y,
+		BASE_W, BASE_H, GLASS_TINT, 1)
 	p.glass = place('glass' .. key, glassTex,
-		BASE_TUBE_X, TUBE_TOP, TUBE_W, TUBE_H, GLASS_TINT, 1)
-
-	-- Clasp over the glass: it is what hides the tube's bottom end.
-	p.clasp = place('clasp' .. key, claspTex, 0, BASE_Y, BASE_W, BASE_H,
-		FITTING_TINT, 1)
-	p.cap = place('cap' .. key, capTex,
-		CAP_X, TUBE_TOP - CAP_H + CAP_OVERLAP, CAP_W, CAP_H, FITTING_TINT, 1)
+		GLASS_X, GLASS_Y, TUBE_W, TUBE_H, GLASS_TINT, 1)
+	p.cap = place('cap' .. key, capTex, CAP_X, CAP_Y, CAP_W, CAP_H, FITTING_TINT, 1)
 
 	local body = {
 		type = ui.TYPE.Widget,
@@ -660,6 +679,7 @@ function applyVialStyle()
 			p.bulb.props.alpha = BULB_ALPHA or 1
 		end
 		if p.glass then p.glass.props.color = GLASS_TINT end
+		if p.clearClasp then p.clearClasp.props.color = GLASS_TINT end
 		if p.clasp then p.clasp.props.color = FITTING_TINT end
 		if p.cap then p.cap.props.color = FITTING_TINT end
 		if p.text then p.text.props.textColor = NUMBER_COLOR end
@@ -754,8 +774,12 @@ end
 local function setVialFill(p, rows, k)
 	if not p.fill then return end
 	p.fill.props.resource = fillTex[rows]
-	p.fill.props.position = v2(math.floor(BASE_TUBE_X * k), math.floor((TUBE_BOT - rows) * k))
-	p.fill.props.size = v2(math.max(1, math.floor(TUBE_W * k)), math.max(1, math.floor(rows * k)))
+	p.fill.props.position = v2(math.floor(FILL_X * k), math.floor((FILL_BOTTOM - rows) * k))
+	p.fill.props.size = v2(math.max(1, math.floor(TUBE_W * k)),
+		math.max(1, math.floor(rows * k)))
+	-- An empty vessel draws no liquid at all, rather than a one-pixel sliver in
+	-- the bottom of the bulb.
+	p.fill.props.visible = rows > 0
 end
 
 local function onUpdate(dt)

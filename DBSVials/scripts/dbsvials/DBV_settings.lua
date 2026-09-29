@@ -98,7 +98,7 @@ BuiltInPresets = {
 		SHOW_NUMBERS  = true,
 	},
 	['Large'] = {
-		VIAL_SIZE    = 260,
+		VIAL_SIZE    = 286,
 		RUNE_HEIGHT  = 276,
 		RUNE_WIDTH   = 66,
 		SHOW_NUMBERS = true,
@@ -109,7 +109,7 @@ BuiltInPresets = {
 		HUD_BACKGROUND = false,
 		HUD_BORDER     = false,
 		SHOW_CAP       = false,
-		VIAL_SIZE      = 120,
+		VIAL_SIZE      = 132,
 	},
 	['Runes only'] = {
 		SHOW_HEALTH  = false,
@@ -272,10 +272,10 @@ settingsTemplate.VIALS = {
 			name = 'Vial Size',
 			description = 'Overall height of the whole assembly -- collar, tube, clasp and\n'
 				.. 'bulb together. Width follows, so the fittings keep the\n'
-				.. 'proportions they were drawn with. 172 is the art at 1:1.',
+				.. 'proportions they were drawn with. 190 is the art at 1:1.',
 			renderer = R_SLIDER,
-			default = 172,
-			argument = sliderArg(24, 600, 1, 'px', 172),
+			default = 190,
+			argument = sliderArg(24, 600, 1, 'px', 190),
 		},
 		{
 			key = 'HEALTH_COLOR',
@@ -324,6 +324,16 @@ settingsTemplate.VIALS = {
 				'textures/dbsvials/VIAL_BOTT_EMPTY.png',
 				'textures/dbsvials/VIAL_CLEAR_GLASS.png',
 			},
+		},
+		{
+			key = 'CLEAR_CLASP_TEXTURE',
+			name = 'Clear Clasp',
+			description = 'The vessel\'s front glass, drawn OVER the liquid where it\n'
+				.. 'crosses the clasp. This is what makes the liquid read as being\n'
+				.. 'inside the vessel rather than passing in front of the metal.\n'
+				.. 'Blank for none.',
+			renderer = 'textLine',
+			default = 'textures/dbsvials/VIAL_CLEAR_CLASP.png',
 		},
 		{
 			key = 'BULB_TINT',
@@ -855,7 +865,7 @@ local REBUILD = {
 	RUNE_HEIGHT = true, RUNE_WIDTH = true, RUNE_FILL_FROM = true,
 	-- Texture paths and the piece toggles: each one changes which images exist
 	-- in the tree, so the tree has to be rebuilt rather than poked.
-	GLASS_TEXTURE = true, BULB_TEXTURE = true,
+	GLASS_TEXTURE = true, BULB_TEXTURE = true, CLEAR_CLASP_TEXTURE = true,
 	SHOW_RESIDUE = true, SHOW_CLASP = true, SHOW_CAP = true,
 	SHOW_NUMBERS = true, NUMBER_SIZE = true, NUMBER_FORMAT = true,
 }
