@@ -824,5 +824,20 @@ return {
 		UiModeChanged = UiModeChanged,
 		MoonTracker_PhaseChanged = onPhaseChanged,
 		MoonTracker_ShadeOfTheRevenant = onPhaseChanged,
+		BSCompass_SetOverlay = function(data)
+			if type(data) == 'table' then interface.setOverlay(data.name, data) end
+		end,
+		BSCompass_ClearOverlay = function(data)
+			if type(data) == 'table' then interface.clearOverlay(data.name) end
+		end,
+		BSCompass_ClearAllOverlays = function()
+			interface.clearAllOverlays()
+		end,
+		HUDTransparencyChange = function(data)
+			if compassHud then
+				compassHud.layout.props.alpha = data.alpha
+				compassHud:update()
+			end
+		end,
 	},
 }
