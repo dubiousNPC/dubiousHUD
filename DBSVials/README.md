@@ -122,43 +122,77 @@ in — pick it and turn **Dreg** off, or you get two.
 
 ## The runes
 
-`KainGameRUNES.png` and `KainGame_RUNES_GLOW.png` are both 70 × 328 and
-registered pixel-for-pixel: every glow shape sits behind its own rune.
+Four sheets, all 70 x 328 and registered pixel-for-pixel, drawn back to front:
 
-The base runes are always drawn. The glow is eight separate slices, one per
-rune, each cut from the sheet by texture offset and drawn *behind* the base.
-A rune's glow goes out when its eighth of your magicka is fully spent, and comes
-back the moment that eighth starts to refill — the boundary is at *any* fill,
-not at half of one. By default the bottom rune is the first to light and the
-last to go out; **Runes Fill From** flips that.
+```
+FLAIR.png       a solid blob behind everything, for pulses and flashes
+GLOW_UP2.png    the thick halo, on a rune whose eighth is completely full
+GLOW_UP1.png    the thin halo, on the one rune currently filling or emptying
+RUNES_x.png     the runes themselves, always drawn
+```
 
-**Fade the Partial Rune** (on by default) fades the rune currently being spent
-with what is left of its eighth, rather than holding it at full glow until it
-empties. It costs nothing: the fade is quantised to 16 steps.
+They nest — every `GLOW_UP1` pixel is inside `GLOW_UP2`, every `GLOW_UP2` pixel
+is inside `FLAIR`, and every rune pixel is inside `FLAIR`. That is what lets a
+rune step from thin halo to thick without the outline jumping.
+
+### The three states
+
+Each rune owns an eighth of your magicka and is in one of three states:
+
+| | |
+|---|---|
+| **spent** | no halo |
+| **filling or emptying** | the thin halo, `GLOW_UP1` |
+| **full** | the thick halo, `GLOW_UP2` |
+
+Only ever one rune is in the middle state: the eighth the level is currently
+passing through. At an exact eighth nothing is in motion and every lit rune
+wears the thick halo. The suite checks that no rune ever wears both.
+
+By default the bottom rune is the first to fill and the last to empty;
+**Runes Fill From** flips that. **Fade the Partial Rune** (on by default) fades
+the thin halo with what is left of its eighth rather than holding it at full
+brightness — quantised to 16 steps, so it costs nothing.
+
+### The flair
+
+`FLAIR.png` sits behind everything and is invisible until something pulses it.
+Two things do:
+
+- **The magicka low warning.** This used to dim the runes themselves, which was
+  the wrong cue — going darker is what running out already *looks* like. Now it
+  lights the flair behind whatever is left.
+- **Another mod**, through `flashRunes()` — see below.
+
+It shows only under lit runes, so what pulses is what you have left.
+**Flair Tint**, **Flair Brightness** and **Flair Pulse Speed** control it; the
+speed is capped at 2.5 cycles/second for the same reason as the vials'.
 
 ### About the sheets
 
-Only the top **276** rows of the 328 carry art. The remaining 52 are empty
-padding. The textures ship exactly as supplied rather than cropped — the widget
-reads rows 0–275 and never looks at the tail, so there is no dead space under
-the bottom rune and nothing was destroyed to get that.
+Only the top **292** rows carry art; the rest is empty padding the widget never
+looks at, so the sheets ship uncropped.
 
-The eight runes are hand-drawn and their heights differ by up to 17px, so the
-boundaries are measured rather than assumed even:
+The eight runes are hand-drawn and their heights differ, so the boundaries are
+measured rather than assumed even:
 
 ```
-rune 1   0– 33      rune 5  139–170
-rune 2  33– 70      rune 6  170–205
-rune 3  70–110      rune 7  205–232
-rune 4 110–139      rune 8  232–276
+rune 1   0– 33      rune 5  143–178
+rune 2  33– 69      rune 6  178–216
+rune 3  69–111      rune 7  216–249
+rune 4 111–143      rune 8  249–292
 ```
 
-Seven of those eight cuts fall in rows where both sheets are empty. The
-exception is between runes 6 and 7: the glow bridges rows 203–206 while the base
-runes are already apart, so that cut sits at 205, the narrowest point of the
-bridge. `dev/check_all.sh` asserts the eight slices tile the column with no gap
-and no overlap, at four different column heights — a gap shows as a dead stripe,
-an overlap double-draws the glow and reads as a brighter seam.
+Those cuts come from the **front runes**, which are the only sheet whose eight
+shapes are cleanly separated — the FLAIR is fat enough to bridge them. Each cut
+then sits at the narrowest point of the FLAIR across that gap, so at most **7
+pixels** of art fall on any boundary.
+
+`dev/check_all.sh` asserts the eight slices tile the column with no gap and no
+overlap at four different column heights — a gap shows as a dead stripe, an
+overlap double-draws the halo and reads as a brighter seam — and that all three
+back layers take the same band of their respective sheets, since a mismatch
+there would land a halo on its neighbour.
 
 ---
 
@@ -205,8 +239,10 @@ The quantisation is the whole trick:
   height*. A 139px vial has at most 139 distinct states however smoothly health
   regenerates. Without this, regenerating fatigue would rebuild the widget every
   frame for a change nobody can see.
-- A **rune** is redrawn only when it lights or goes out — eight states, or 16
-  alpha steps with the partial fade on.
+- A **rune** is redrawn only when it changes state — spent, filling, full —
+  or when the partial fade crosses one of its 16 steps.
+- The **flair** is quantised to the same 16 steps, so a pulse pokes the UI at
+  most 16 times a cycle rather than once a frame.
 - The two widgets are updated **separately**: a health tick that changes nothing
   in the rune column does not touch the rune column.
 - The **pulse** is quantised to the same 16 steps, so a warning can poke the UI
@@ -240,7 +276,7 @@ LUA=texlua dev/check_all.sh   # a LuaTeX install already carries one
 `dev/load_check.lua` stubs enough of the OpenMW API to load the mod offline,
 including live dynamic-stat accessors the tests can drive. The suite:
 
-- **115 behavioural checks** against the real module and the real widget tree.
+- **146 behavioural checks** against the real module and the real widget tree.
   `dev/test_vials.lua` deliberately re-implements none of the module's logic — a
   test that mirrors the code only ever proves the mirror is faithful. It drives
   `onUpdate` and reads the tree that was actually built.
@@ -255,7 +291,10 @@ The behavioural tests are mutation-checked. Flipping the rune fill order,
 removing the stat clamp, drawing the glow over the base runes instead of behind
 them, setting the clasp overlap to zero, letting the fill travel run under the
 collar, floating the collar off the tube, rounding the rune slices so they open
-a one-pixel gap, and tinting both dregs the same each make the suite fail.
+a one-pixel gap, tinting both dregs the same, putting both halos on one rune,
+swapping the thin and thick halos, showing the flair under spent runes,
+stopping the flash from decaying, and interleaving the flair with the halos
+instead of keeping it behind them all each make the suite fail.
 
 ---
 
@@ -288,6 +327,7 @@ I.DBSVials.getLitRunes()    -- how many of the eight are lit, and the total
 I.DBSVials.setVisible(false)           -- both
 I.DBSVials.setVisible(false, 'runes')  -- or just one: 'vials' / 'runes'
 I.DBSVials.isVisible()
+I.DBSVials.flashRunes(1.5)             -- pulse the flair behind the lit runes
 ```
 
 From a script that cannot see the interface — a global script, or a mod that
@@ -295,6 +335,7 @@ loads earlier — the same is reachable by event:
 
 ```lua
 player:sendEvent('DBSVialsSetVisible', { show = false, which = 'runes' })
+player:sendEvent('DBSVialsFlashRunes', { seconds = 1.5 })
 ```
 
 ---
@@ -304,7 +345,8 @@ player:sendEvent('DBSVialsSetVisible', { show = false, which = 'runes' })
 - Vial, rune and glow art: **Dubious**.
 - All supplied art ships unmodified: `glass_tube.png`, `VIAL_TOP.png`,
   `VIAL_CLASP.png`, `VIAL_BOTT_EMPTY.png`, `VIAL_CLEAR_GLASS.png`,
-  `VIAL_RESIDUE.png`, `KainGameRUNES.png`, `KainGame_RUNES_GLOW.png`.
+  `VIAL_RESIDUE.png`, `RUNES_x.png`, `GLOW_UP1.png`, `GLOW_UP2.png`,
+  `FLAIR.png`.
   `VIAL_FILL.png` is the one derived file: a white master cut to the shape the
   TUBE pngs define, so the colour setting can tint it.
 - Stat-tracking approach and the discipline of not redrawing a HUD that has not

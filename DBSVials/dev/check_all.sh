@@ -60,6 +60,9 @@ GLASS_TEXTURE=
 RUNE_FILL_FROM=Top
 GLOW_PARTIAL=false
 LOW_WARNING=All three
+GLOW_PARTIAL=false,LOW_WARNING=All three
+FLAIR_ALPHA=0
+FLAIR_SPEED=2.5
 VIAL_SIZE=600,RUNE_HEIGHT=512,RUNE_WIDTH=256
 VIAL_SIZE=24,RUNE_HEIGHT=32,RUNE_WIDTH=8
 SHOW_CLASP=false
@@ -93,7 +96,7 @@ echo "--- rune slices line up at any size"
 for h in 64 139 276 512; do
     out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
         scripts/dbsvials/DBV_p.lua 2>&1)
-    n=$(echo "$out" | grep -cE '^    glow[1-8] ')
+    n=$(echo "$out" | grep -cE '^    glowThin[1-8] ')
     last=$(echo "$out" | tail -1)
     if [ "$n" = 8 ] && [ "$last" = OK ]; then
         printf '  height %-4s OK  (8 slices)\n' "$h"

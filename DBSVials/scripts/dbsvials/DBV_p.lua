@@ -118,20 +118,33 @@ local TEX = {
 --------------------------------------------------------------------------------
 -- The runes, in art pixels
 --------------------------------------------------------------------------------
--- KainGameRUNES.png and KainGame_RUNES_GLOW.png are both 70 x 328, registered
--- pixel-for-pixel. Only the top 276 rows carry art; the rest is empty padding
--- and the widget simply never looks at it, so the textures ship uncropped.
+-- Four sheets, all 70 x 328 and registered pixel-for-pixel, drawn back to front:
+--
+--   FLAIR      a solid blob behind everything, for pulses and flashes
+--   GLOW_UP2   the thick halo, on a rune whose eighth is completely full
+--   GLOW_UP1   the thin halo, on the one rune currently filling or emptying
+--   RUNES_x    the runes themselves, always drawn
+--
+-- They nest: every GLOW_UP1 pixel is inside GLOW_UP2, every GLOW_UP2 pixel is
+-- inside FLAIR, and every rune pixel is inside FLAIR. That is what lets a rune
+-- step from thin halo to thick without the outline jumping.
+--
+-- Only the top 292 rows carry art; the rest is empty padding the widget never
+-- looks at, so the sheets ship uncropped.
 local RUNE_SHEET_W          = 70
-local RUNE_CONTENT_H        = 276
+local RUNE_CONTENT_H        = 292
 
 -- Measured, not assumed even: the runes are hand-drawn and their heights differ
--- by up to 17px. Seven cuts fall where both sheets are empty; the one between
--- runes 6 and 7 sits at 205, the narrowest point of a glow that bridges rows
--- 203-206 while the base runes are already apart.
-local RUNE_CUTS             = { 0, 33, 70, 110, 139, 170, 205, 232, 276 }
+-- by up to 17px. The cuts come from the front runes, which are the only sheet
+-- whose eight shapes are cleanly separated -- the FLAIR is fat enough to bridge
+-- them. Each cut then sits at the narrowest point of the FLAIR across that gap,
+-- so at most 7 pixels of art fall on any boundary.
+local RUNE_CUTS             = { 0, 33, 69, 111, 143, 178, 216, 249, 292 }
 local RUNE_COUNT            = #RUNE_CUTS - 1
-local RUNES_PATH            = 'textures/dbsvials/KainGameRUNES.png'
-local GLOW_PATH             = 'textures/dbsvials/KainGame_RUNES_GLOW.png'
+local RUNES_PATH            = 'textures/dbsvials/RUNES_x.png'
+local GLOW1_PATH            = 'textures/dbsvials/GLOW_UP1.png'
+local GLOW2_PATH            = 'textures/dbsvials/GLOW_UP2.png'
+local FLAIR_PATH            = 'textures/dbsvials/FLAIR.png'
 
 -- Quantisation for anything that fades. Below what anyone can distinguish on a
 -- HUD element this size, and it caps how often a fade can poke the UI.
@@ -174,17 +187,19 @@ local vialsBackground, runesBackground
 local parts = {
 	health  = {},
 	stamina = {},
-	magicka = { glows = {} },
+	magicka = { flair = {}, glow2 = {}, glow1 = {} },
 }
 
 local fillTex   = {}        -- [rows] -> texture showing the bottom `rows` of the tube
-local glowTex   = {}
+local glow1Tex, glow2Tex, flairTex = {}, {}, {}
 local runeTex, glassTex, claspTex, capTex, residueTex, bulbTex
 
 local lastHealthRows  = -1
 local lastStaminaRows = -1
 local lastRuneLit     = -1
 local lastRunePartial = -1
+local lastFlair       = -1
+local flairTimer      = 0      -- seconds left on an externally requested flash
 local lastPulse       = { health = -1, stamina = -1, magicka = -1 }
 local lastText        = { health = nil, stamina = nil, magicka = nil }
 
@@ -230,14 +245,21 @@ local function buildTextures()
 		offset = v2(0, 0),
 		size   = v2(RUNE_SHEET_W, RUNE_CONTENT_H),
 	}
-	glowTex = {}
+	-- One slice per rune per sheet. The front runes stay whole: they are always
+	-- fully drawn, so there is nothing to switch and no reason to cut them.
+	glow1Tex, glow2Tex, flairTex = {}, {}, {}
 	for i = 1, RUNE_COUNT do
 		local y0, y1 = RUNE_CUTS[i], RUNE_CUTS[i + 1]
-		glowTex[i] = ui.texture {
-			path   = GLOW_PATH,
-			offset = v2(0, y0),
-			size   = v2(RUNE_SHEET_W, y1 - y0),
-		}
+		local function slice(path)
+			return ui.texture {
+				path   = path,
+				offset = v2(0, y0),
+				size   = v2(RUNE_SHEET_W, y1 - y0),
+			}
+		end
+		glow1Tex[i] = slice(GLOW1_PATH)
+		glow2Tex[i] = slice(GLOW2_PATH)
+		flairTex[i] = slice(FLAIR_PATH)
 	end
 end
 
@@ -392,25 +414,36 @@ end
 local function buildRunes()
 	local w, h = runeMetrics()
 	local p = parts.magicka
-	p.glows = {}
+	p.flair, p.glow2, p.glow1 = {}, {}, {}
 	local stack = ui.content {}
 
+	-- Both edges are rounded first and the height taken as their difference.
+	-- Rounding the position and the height separately lets them disagree by a
+	-- pixel, which opens a hairline gap between two runes at some column
+	-- heights -- a dead stripe across the glow.
+	local top, bottom = {}, {}
 	for i = 1, RUNE_COUNT do
-		-- Both edges are rounded first and the height taken as their
-		-- difference. Rounding the position and the height separately lets them
-		-- disagree by a pixel, which opens a hairline gap between two runes at
-		-- some column heights -- a dead stripe across the glow.
-		local top    = math.floor(h * RUNE_CUTS[i] / RUNE_CONTENT_H)
-		local bottom = math.floor(h * RUNE_CUTS[i + 1] / RUNE_CONTENT_H)
-		local el = pixelImage('glow' .. i, glowTex[i],
-			0, top, w, bottom - top,
-			GLOW_TINT, GLOW_ALPHA or 1)
-		-- Created once and hidden. Nothing is added to or removed from the tree
-		-- while playing; lighting a rune is a visibility flag.
-		el.props.visible = false
-		p.glows[i] = el
-		stack:add(el)
+		top[i]    = math.floor(h * RUNE_CUTS[i] / RUNE_CONTENT_H)
+		bottom[i] = math.floor(h * RUNE_CUTS[i + 1] / RUNE_CONTENT_H)
 	end
+
+	-- Back to front, each layer complete before the next starts, so every flair
+	-- sits behind every halo. Interleaving them per rune would put rune 2's
+	-- flair on top of rune 1's halo where their slices touch.
+	local function layer(prefix, texes, tint, alpha, into)
+		for i = 1, RUNE_COUNT do
+			local el = pixelImage(prefix .. i, texes[i],
+				0, top[i], w, bottom[i] - top[i], tint, alpha)
+			-- Created once and hidden. Nothing is added to or removed from the
+			-- tree while playing; lighting a rune is a visibility flag.
+			el.props.visible = false
+			into[i] = el
+			stack:add(el)
+		end
+	end
+	layer('flair', flairTex, FLAIR_TINT, 0, p.flair)
+	layer('glowThick', glow2Tex, GLOW_TINT, GLOW_ALPHA or 1, p.glow2)
+	layer('glowThin', glow1Tex, GLOW_TINT, GLOW_ALPHA or 1, p.glow1)
 
 	p.base = pixelImage('runeBase', runeTex, 0, 0, w, h, RUNE_TINT, RUNE_BASE_ALPHA or 1)
 	stack:add(p.base)
@@ -542,7 +575,7 @@ function buildVialsHud()
 	vialsHud, runesHud = nil, nil
 	vialsBackground, runesBackground = nil, nil
 	parts.health, parts.stamina = {}, {}
-	parts.magicka = { glows = {} }
+	parts.magicka = { flair = {}, glow2 = {}, glow1 = {} }
 
 	buildTextures()
 
@@ -588,7 +621,7 @@ function buildVialsHud()
 
 	-- Force the next update to apply everything to the fresh tree.
 	lastHealthRows, lastStaminaRows = -1, -1
-	lastRuneLit, lastRunePartial = -1, -1
+	lastRuneLit, lastRunePartial, lastFlair = -1, -1, -1
 	lastPulse.health, lastPulse.stamina, lastPulse.magicka = -1, -1, -1
 	lastText.health, lastText.stamina, lastText.magicka = nil, nil, nil
 
@@ -640,13 +673,15 @@ function applyVialStyle()
 		m.base.props.alpha = RUNE_BASE_ALPHA or 1
 	end
 	for i = 1, RUNE_COUNT do
-		if m.glows[i] then m.glows[i].props.color = GLOW_TINT end
+		if m.glow1[i] then m.glow1[i].props.color = GLOW_TINT end
+		if m.glow2[i] then m.glow2[i].props.color = GLOW_TINT end
+		if m.flair[i] then m.flair[i].props.color = FLAIR_TINT end
 	end
 	if m.text then m.text.props.textColor = NUMBER_COLOR end
 
 	-- Glow alpha is owned by the update pass, because the partial rune's fade
 	-- writes it too. Forcing a re-apply hands it back rather than fighting it.
-	lastRuneLit, lastRunePartial = -1, -1
+	lastRuneLit, lastRunePartial, lastFlair = -1, -1, -1
 
 	if vialsHud then vialsHud:update() end
 	if runesHud then runesHud:update() end
@@ -761,25 +796,40 @@ local function onUpdate(dt)
 	end
 
 	-- --- runes ------------------------------------------------------------
+	-- Three states per rune, which is what the two glow sheets are for:
+	--   spent            no halo
+	--   filling/emptying GLOW_UP1, the thin halo
+	--   full             GLOW_UP2, the thick one
+	-- Only ever one rune is in the middle state -- the one the current eighth
+	-- is moving through.
 	if runesHud and SHOW_RUNES ~= false then
 		local lit, partial = runeState(mFrac)
 		if not GLOW_PARTIAL then partial = ALPHA_STEPS end
 		if lit ~= lastRuneLit or partial ~= lastRunePartial then
 			lastRuneLit, lastRunePartial = lit, partial
 			local fullAlpha = GLOW_ALPHA or 1
+			local m = parts.magicka
 			for i = 1, RUNE_COUNT do
-				local el = parts.magicka.glows[i]
-				if el then
-					local slot = runeSlotFor(i)
-					if slot > lit then
-						el.props.visible = false
-					else
-						el.props.visible = true
-						-- Only the topmost lit rune is ever partly full.
-						el.props.alpha = (slot == lit)
-							and (fullAlpha * partial / ALPHA_STEPS)
-							or fullAlpha
-					end
+				local slot = runeSlotFor(i)
+				local thin, thick = false, false
+				if slot < lit then
+					thick = true
+				elseif slot == lit then
+					-- At exactly full this rune is done, so it takes the thick
+					-- halo too; anything less and it is the one in motion.
+					if partial >= ALPHA_STEPS then thick = true else thin = true end
+				end
+				if m.glow2[i] then
+					m.glow2[i].props.visible = thick
+					m.glow2[i].props.alpha = fullAlpha
+				end
+				if m.glow1[i] then
+					m.glow1[i].props.visible = thin
+					-- GLOW_PARTIAL fades the moving rune with what is left of
+					-- its eighth instead of holding it at full brightness.
+					m.glow1[i].props.alpha = GLOW_PARTIAL
+						and (fullAlpha * partial / ALPHA_STEPS)
+						or fullAlpha
 				end
 			end
 			runesDirty = true
@@ -803,7 +853,41 @@ local function onUpdate(dt)
 		end
 		if pulse('health', hFrac, parts.health.fill) then vialsDirty = true end
 		if pulse('stamina', sFrac, parts.stamina.fill) then vialsDirty = true end
-		if pulse('magicka', mFrac, parts.magicka.base) then runesDirty = true end
+	end
+
+	-- --- flair ------------------------------------------------------------
+	-- The layer behind the runes, for pulses and flashes. It carries the
+	-- magicka low warning -- which used to dim the runes themselves, a poor cue,
+	-- since going darker is what running out already looks like -- and any flash
+	-- another mod asks for through the interface.
+	--
+	-- It shows only under lit runes, so what pulses is what you have left.
+	if runesHud and SHOW_RUNES ~= false then
+		if flairTimer > 0 then
+			flairTimer = flairTimer - (dt or 0)
+			if flairTimer < 0 then flairTimer = 0 end
+		end
+		local warn = (applies.magicka and mFrac < (LOW_THRESHOLD or 0.25))
+		local step = 0
+		if warn or flairTimer > 0 then
+			if not applies.magicka then pulseClock = pulseClock + (dt or 0) end
+			local phase = (math.sin(pulseClock * (FLAIR_SPEED or 1.4) * 2 * math.pi) + 1) * 0.5
+			step = math.floor(phase * ALPHA_STEPS + 0.5)
+		end
+		if step ~= lastFlair then
+			lastFlair = step
+			local a = (FLAIR_ALPHA or 0.8) * step / ALPHA_STEPS
+			local lit = lastRuneLit
+			for i = 1, RUNE_COUNT do
+				local el = parts.magicka.flair[i]
+				if el then
+					local on = step > 0 and runeSlotFor(i) <= lit
+					el.props.visible = on
+					el.props.alpha = on and a or 0
+				end
+			end
+			runesDirty = true
+		end
 	end
 
 	-- --- numbers ----------------------------------------------------------
@@ -915,6 +999,14 @@ local interface = {
 	end,
 
 	isVisible = function() return not externallyHidden end,
+
+	--- Pulse the flair behind the lit runes for `seconds` (default 1.5).
+	--- This is what the FLAIR sheet is there for: a mod that wants to mark a
+	--- spell going off, or magicka coming back, can flash the runes without
+	--- knowing anything about how they are drawn.
+	flashRunes = function(seconds)
+		flairTimer = math.max(0, tonumber(seconds) or 1.5)
+	end,
 }
 
 return {
@@ -932,6 +1024,9 @@ return {
 			if type(data) == 'table' then
 				interface.setVisible(data.show ~= false, data.which)
 			end
+		end,
+		DBSVialsFlashRunes = function(data)
+			interface.flashRunes(type(data) == 'table' and data.seconds or nil)
 		end,
 	},
 }

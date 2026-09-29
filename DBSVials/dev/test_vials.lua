@@ -29,19 +29,37 @@ local CLASP_OVERLAP      = 12
 local CAP_OVERLAP        = 9
 
 local base
-local glows = collectNodes('glow')
+-- Three layers behind the runes now. A rune is "lit" if it wears either halo.
+local thin, thick, flair
+local function rebindRunes()
+	thin, thick, flair = collectNodes('glowThin'), collectNodes('glowThick'),
+		collectNodes('flair')
+end
+rebindRunes()
+local function vis(t, i) local e = t['' .. i]; return e and e.props.visible ~= false end
+local function on(tbl, i)
+	local e = tbl[i]
+	return e and e.props.visible ~= false
+end
+local function thinOn(i)  return on(thin, 'glowThin' .. i) end
+local function thickOn(i) return on(thick, 'glowThick' .. i) end
+local function flairOn(i) return on(flair, 'flair' .. i) end
 local function litSet()
 	local out = {}
-	for i = 1, 8 do
-		local el = glows['glow' .. i]
-		out[i] = (el and el.props.visible ~= false) and 1 or 0
-	end
+	for i = 1, 8 do out[i] = (thinOn(i) or thickOn(i)) and 1 or 0 end
 	return out
 end
 local function litCount()
 	local n = 0
 	for _, v in ipairs(litSet()) do n = n + v end
 	return n
+end
+local function stateStr()
+	local out = {}
+	for i = 1, 8 do
+		out[i] = thickOn(i) and 'F' or (thinOn(i) and 'p' or '.')
+	end
+	return table.concat(out)
 end
 local function show(t) return table.concat(t, '') end
 
@@ -165,7 +183,7 @@ end
 
 -- Re-bind everything the earlier sections captured: the tree above is gone.
 vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
-glows = collectNodes('glow')
+rebindRunes()
 hf, hglass = findNode('fillhealth'), findNode('glasshealth')
 hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
 base = findNode('runeBase')
@@ -250,19 +268,51 @@ do
 		'but tinted differently: ' .. tostring(rh.props.color) .. ' vs ' .. tostring(rs.props.color))
 end
 
-print('=== 8. all eight glow slices exist and are distinct cuts ===')
+print('=== 8. all three rune layers are sliced eight ways ===')
 for i = 1, 8 do
-	check(glows['glow' .. i] ~= nil, 'glow' .. i .. ' exists')
+	check(thin['glowThin' .. i] ~= nil, 'thin halo ' .. i .. ' exists')
+	check(thick['glowThick' .. i] ~= nil, 'thick halo ' .. i .. ' exists')
+	check(flair['flair' .. i] ~= nil, 'flair ' .. i .. ' exists')
 end
 do
 	local seen, dup = {}, false
 	for i = 1, 8 do
-		local r = glows['glow' .. i].props.resource
+		local r = thin['glowThin' .. i].props.resource
 		local key = tostring(r._offset and r._offset.y) .. ':' .. tostring(r._size and r._size.y)
 		if seen[key] then dup = true end
 		seen[key] = true
 	end
 	check(not dup, 'each rune is cut from its own band of the sheet')
+end
+do
+	-- The three sheets are registered against each other, so rune i must be the
+	-- same band on all three or a halo lands on its neighbour.
+	local ok = true
+	for i = 1, 8 do
+		local a = thin['glowThin' .. i].props.resource
+		local b = thick['glowThick' .. i].props.resource
+		local c = flair['flair' .. i].props.resource
+		if not (a._offset.y == b._offset.y and b._offset.y == c._offset.y
+		        and a._size.y == b._size.y and b._size.y == c._size.y) then
+			ok = false
+		end
+		if a._texture == b._texture then ok = false end
+	end
+	check(ok, 'thin, thick and flair take the same band of three different sheets')
+end
+do
+	-- Every flair must be behind every halo. Interleaving them per rune would
+	-- put rune 2's flair over rune 1's halo where their slices touch.
+	local col = findNode('runeColumn')
+	local pos = {}
+	for i, child in ipairs(col.content._items) do pos[child.name] = i end
+	local lastFlair, firstHalo = 0, math.huge
+	for i = 1, 8 do
+		lastFlair = math.max(lastFlair, pos['flair' .. i])
+		firstHalo = math.min(firstHalo, pos['glowThick' .. i], pos['glowThin' .. i])
+	end
+	check(lastFlair < firstHalo,
+		'the whole flair layer is drawn before any halo')
 end
 
 print('=== 9. the slices tile the column with no gap or overlap ===')
@@ -273,7 +323,7 @@ do
 	local col = findNode('runeColumn')
 	local expect, ok = 0, true
 	for i = 1, 8 do
-		local p = glows['glow' .. i].props
+		local p = thin['glowThin' .. i].props
 		if p.position.y ~= expect then
 			ok = false
 			print(string.format('  rune %d starts at %d, expected %d', i, p.position.y, expect))
@@ -317,6 +367,105 @@ check(litCount() == 1, 'the faintest trace of magicka lights one rune')
 frame(nil, nil, 0)
 check(litCount() == 0, 'exactly zero lights none')
 
+print('=== 12b. a rune wears exactly one halo, never two ===')
+-- GLOW_UP1 and GLOW_UP2 are alternatives for the same rune, not layers to
+-- stack. Both at once would double the outline and read as a seam.
+do
+	local ok = true
+	for i = 0, 40 do
+		frame(nil, nil, i / 40)
+		for r = 1, 8 do
+			if thinOn(r) and thickOn(r) then
+				ok = false
+				print(string.format('  rune %d wore both at %.3f', r, i / 40))
+			end
+		end
+	end
+	check(ok, 'no rune ever wears both halos')
+end
+
+print('=== 12c. thin halo marks the rune in motion, thick marks the full ones ===')
+do
+	-- Below a full eighth: that rune is filling, so it takes the thin halo and
+	-- everything under it is already full.
+	frame(nil, nil, 0.30)   -- 2.4 eighths: two full, one part-way
+	check(stateStr() == '.....pFF',
+		'at 30%% two are full and one is filling, got ' .. stateStr())
+	frame(nil, nil, 0.75)   -- exactly six eighths, nothing in motion
+	check(stateStr() == '..FFFFFF',
+		'at exactly 6/8 all six are full and none is in motion, got ' .. stateStr())
+	frame(nil, nil, 0.80)
+	check(stateStr() == '.pFFFFFF',
+		'just past 6/8 a seventh starts filling, got ' .. stateStr())
+	frame(nil, nil, 1.0)
+	check(stateStr() == 'FFFFFFFF', 'full magicka is eight thick halos, got ' .. stateStr())
+	frame(nil, nil, 0)
+	check(stateStr() == '........', 'empty magicka is none, got ' .. stateStr())
+end
+do
+	-- Only ever one rune is in motion: the eighth the level is passing through.
+	local ok = true
+	for i = 1, 39 do
+		frame(nil, nil, i / 40)
+		local n = 0
+		for r = 1, 8 do if thinOn(r) then n = n + 1 end end
+		if n > 1 then ok = false; print(string.format('  %d thin halos at %.3f', n, i / 40)) end
+	end
+	check(ok, 'at most one rune is in motion at any level')
+end
+
+print('=== 12d. the flair is the pulse layer, and is off until something pulses ===')
+do
+	local storage = require('openmw.storage')
+	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'Off')
+	rebindRunes()
+	frame(1, 1, 1)
+	local anyOn = false
+	for i = 1, 8 do if flairOn(i) then anyOn = true end end
+	check(not anyOn, 'nothing is pulsing, so no flair is showing')
+
+	-- A mod asks for a flash through the interface.
+	MODULE.interface.flashRunes(2.0)
+	frame(nil, nil, 0.5)
+	local lit = {}
+	for i = 1, 8 do lit[i] = flairOn(i) end
+	local shown, past = 0, 0
+	for i = 1, 8 do
+		if lit[i] then shown = shown + 1 end
+		-- rune 8 is the bottom; at 50%% runes 5..8 are lit
+		if lit[i] and i < 5 then past = past + 1 end
+	end
+	check(shown > 0, 'flashRunes lit the flair, got ' .. tostring(shown) .. ' slices')
+	check(past == 0, 'the flair only shows under lit runes, not spent ones')
+
+	-- and it decays
+	for _ = 1, 200 do frame(nil, nil, 0.5) end
+	local stillOn = false
+	for i = 1, 8 do if flairOn(i) then stillOn = true end end
+	check(not stillOn, 'the flash ran out and the flair went away')
+end
+do
+	-- The magicka low warning drives the flair rather than dimming the runes.
+	-- Dimming was the wrong cue: going darker is what running out already
+	-- looks like.
+	local storage = require('openmw.storage')
+	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'All three')
+	rebindRunes()
+	base = findNode('runeBase')
+	local baseAlphaBefore = base.props.alpha
+	local seen = false
+	for _ = 1, 60 do
+		frame(nil, nil, 0.1)
+		for i = 1, 8 do if flairOn(i) then seen = true end end
+	end
+	check(seen, 'low magicka pulses the flair')
+	check(base.props.alpha == baseAlphaBefore,
+		'and leaves the runes themselves at full brightness')
+	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'Off')
+	rebindRunes()
+	base = findNode('runeBase')
+end
+
 print('=== 13. the base runes are always drawn, glow behind them ===')
 base = findNode('runeBase')
 frame(nil, nil, 0)
@@ -330,9 +479,11 @@ do
 	end
 	local ok = basePos ~= nil
 	for i = 1, 8 do
-		if not (order['glow' .. i] and order['glow' .. i] < basePos) then ok = false end
+		for _, n in ipairs { 'flair' .. i, 'glowThick' .. i, 'glowThin' .. i } do
+			if not (order[n] and order[n] < basePos) then ok = false end
+		end
 	end
-	check(ok, 'all eight glows are drawn before the base runes')
+	check(ok, 'every halo and flair is drawn before the front runes')
 end
 
 print('=== 14. sub-row changes do not touch the UI ===')

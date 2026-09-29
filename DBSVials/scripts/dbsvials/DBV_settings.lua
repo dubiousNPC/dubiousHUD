@@ -392,9 +392,11 @@ settingsTemplate.RUNES = {
 	key = 'Settings' .. MODNAME .. 'Runes',
 	l10n = 'none',
 	name = 'Magicka Runes',
-	description = 'Eight runes, an eighth of your magicka each. The base runes are always\n'
-		.. 'drawn; the glow behind a rune goes out when its eighth is spent and\n'
-		.. 'comes back the moment it starts to refill.',
+	description = 'Eight runes, an eighth of your magicka each, in their own widget.\n'
+		.. 'The runes are always drawn. Behind them, a full eighth wears the\n'
+		.. 'thick halo and the one currently filling or emptying wears the thin\n'
+		.. 'one; a spent eighth has none. The flair behind all of it is what\n'
+		.. 'pulses.',
 	page = MODNAME,
 	permanentStorage = true,
 	order = getOrder(),
@@ -460,7 +462,7 @@ settingsTemplate.RUNES = {
 		{
 			key = 'GLOW_TINT',
 			name = 'Glow Tint',
-			description = 'Multiplied over KainGame_RUNES_GLOW.',
+			description = 'Multiplied over both halo sheets, GLOW_UP1 and GLOW_UP2.',
 			renderer = R_COLOR,
 			default = colorDefault('FFFFFF'),
 			argument = { presetColors = presetColors },
@@ -476,11 +478,40 @@ settingsTemplate.RUNES = {
 		{
 			key = 'GLOW_PARTIAL',
 			name = 'Fade the Partial Rune',
-			description = 'The rune currently being spent fades with what is left of its\n'
-				.. 'eighth, instead of staying at full glow until it empties.\n'
-				.. 'Costs nothing: the fade is quantised to 16 steps.',
+			description = 'The rune currently filling or emptying fades with what is left\n'
+				.. 'of its eighth, instead of holding its thin halo at full\n'
+				.. 'brightness until it empties. Costs nothing: the fade is\n'
+				.. 'quantised to 16 steps.',
 			renderer = 'checkbox',
 			default = true,
+		},
+		{
+			key = 'FLAIR_TINT',
+			name = 'Flair Tint',
+			description = 'The FLAIR sheet sits behind the runes and is what pulses. It is\n'
+				.. 'invisible until something makes it flash, so this is the colour\n'
+				.. 'of the flash rather than of anything normally on screen.',
+			renderer = R_COLOR,
+			default = colorDefault('FFFFFF'),
+			argument = { presetColors = presetColors },
+		},
+		{
+			key = 'FLAIR_ALPHA',
+			name = 'Flair Brightness',
+			description = 'How bright the flair gets at the top of a pulse.',
+			renderer = R_SLIDER,
+			default = 0.8,
+			argument = sliderArg(0, 1, 0.05, '', 0.8),
+		},
+		{
+			key = 'FLAIR_SPEED',
+			name = 'Flair Pulse Speed',
+			description = 'Full cycles per second. Kept under three, as with the vials:\n'
+				.. 'faster than that is a seizure risk and this sits in the corner\n'
+				.. 'of the eye all game.',
+			renderer = R_SLIDER,
+			default = 1.4,
+			argument = sliderArg(0.2, 2.5, 0.1, '/s', 1.4),
 		},
 	},
 }
@@ -768,7 +799,8 @@ I.Settings.registerPage {
 local COLOR_KEYS = { HEALTH_COLOR = true, STAMINA_COLOR = true,
                      GLASS_TINT = true, RUNE_TINT = true, GLOW_TINT = true,
                      NUMBER_COLOR = true, HUD_BORDER_COLOR = true,
-                     BULB_TINT = true, FITTING_TINT = true }
+                     BULB_TINT = true, FITTING_TINT = true,
+                     FLAIR_TINT = true }
 
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
