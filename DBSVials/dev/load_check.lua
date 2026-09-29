@@ -178,14 +178,24 @@ stubs['openmw.ui'] = {
 			error('ui.texture: needs a table with a string path', 2)
 		end
 		record.textures[#record.textures + 1] = opts.path
-		return { _texture = opts.path }
+		-- offset and size are kept, not just the path: a texture cut from the
+		-- wrong sub-rect draws the wrong part of a sheet, and dropping them here
+		-- would make that invisible to every test.
+		return {
+			_texture = opts.path,
+			_offset = opts.offset,
+			_size = opts.size,
+		}
 	end,
 	_getMenuTransparency = function() return 0.7 end,
 	create = function(layout)
 		local e = { layout = layout }
 		record.elements[#record.elements + 1] = e
 		function e:update() end
-		function e:destroy() end
+		-- A destroyed element has to stay destroyed, or findNode hands a test
+		-- the tree from before the last rebuild and every assertion after that
+		-- is made against a widget the game can no longer see.
+		function e:destroy() self._destroyed = true end
 		return e
 	end,
 }
@@ -584,7 +594,9 @@ local function eachNode(fn)
 			for _, child in ipairs(node.template.content._items) do walk(child) end
 		end
 	end
-	for _, e in ipairs(record.elements) do walk(e) end
+	for _, e in ipairs(record.elements) do
+		if not e._destroyed then walk(e) end
+	end
 end
 
 function findNode(name)
@@ -635,7 +647,8 @@ if dumpName then
 	local roots = {}
 	for _, e in ipairs(record.elements) do
 		local lay = e.layout
-		if dumpName == '*' or (type(lay) == 'table' and lay.name == dumpName) then
+		if not e._destroyed and
+		   (dumpName == '*' or (type(lay) == 'table' and lay.name == dumpName)) then
 			roots[#roots + 1] = e
 		end
 	end

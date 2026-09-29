@@ -96,12 +96,11 @@ BuiltInPresets = {
 		HEALTH_COLOR  = colorDefault('3C8BD9'),
 		STAMINA_COLOR = colorDefault('E0821E'),
 		SHOW_NUMBERS  = true,
-		EMPTY_ALPHA   = 0.55,
 	},
 	['Large'] = {
-		VIAL_HEIGHT  = 208,
-		VIAL_WIDTH   = 26,
+		VIAL_SIZE    = 260,
 		RUNE_HEIGHT  = 276,
+		RUNE_WIDTH   = 66,
 		SHOW_NUMBERS = true,
 		NUMBER_SIZE  = 18,
 	},
@@ -109,7 +108,8 @@ BuiltInPresets = {
 		SHOW_RUNES     = false,
 		HUD_BACKGROUND = false,
 		HUD_BORDER     = false,
-		VIAL_HEIGHT    = 96,
+		SHOW_CAP       = false,
+		VIAL_SIZE      = 120,
 	},
 	['Runes only'] = {
 		SHOW_HEALTH  = false,
@@ -164,28 +164,13 @@ settingsTemplate.GENERAL = {
 	key = 'Settings' .. MODNAME .. 'General',
 	l10n = 'none',
 	name = 'General',
-	description = 'Placement and visibility.',
+	description = 'Settings shared by both widgets. The vials and the runes are two\n'
+		.. 'separate widgets with their own positions -- drag either one on its\n'
+		.. 'own, or put them in opposite corners.',
 	page = MODNAME,
 	permanentStorage = true,
 	order = getOrder(),
 	settings = {
-		{
-			key = 'HUD_X_POS',
-			name = 'Horizontal Position',
-			description = 'Pixels from the left. Click and drag the meters to move them.',
-			renderer = R_SLIDER,
-			default = 40,
-			argument = sliderArg(-200, math.floor(hudLayerSize.x) + 200, 1, 'px', 40),
-		},
-		{
-			key = 'HUD_Y_POS',
-			name = 'Vertical Position',
-			description = 'Pixels from the top.',
-			renderer = R_SLIDER,
-			default = math.max(40, math.floor(hudLayerSize.y) - 260),
-			argument = sliderArg(-50, math.floor(hudLayerSize.y), 1, 'px',
-				math.max(40, math.floor(hudLayerSize.y) - 260)),
-		},
 		{
 			key = 'HUD_LOCK',
 			name = 'Lock Position',
@@ -212,16 +197,17 @@ settingsTemplate.GENERAL = {
 		},
 		{
 			key = 'LAYOUT',
-			name = 'Arrangement',
-			description = 'How the three meters are laid out next to each other.',
+			name = 'Vial Arrangement',
+			description = 'How the two vials sit next to each other. The runes are a\n'
+				.. 'separate widget and are not affected.',
 			renderer = R_SELECT,
 			default = 'Horizontal',
 			argument = selectArg { 'Horizontal', 'Vertical' },
 		},
 		{
 			key = 'SPACING',
-			name = 'Spacing',
-			description = 'Gap between meters.',
+			name = 'Vial Spacing',
+			description = 'Gap between the two vials.',
 			renderer = R_SLIDER,
 			default = 10,
 			argument = sliderArg(0, 64, 1, 'px', 10),
@@ -265,35 +251,48 @@ settingsTemplate.VIALS = {
 	order = getOrder(),
 	settings = {
 		{
-			key = 'VIAL_HEIGHT',
-			name = 'Vial Height',
-			description = 'The tube art is 139px tall. Anything taller or shorter stretches it.',
+			key = 'VIAL_X_POS',
+			name = 'Horizontal Position',
+			description = 'Pixels from the left. Click and drag a vial to move the pair.',
 			renderer = R_SLIDER,
-			default = 139,
-			argument = sliderArg(32, 512, 1, 'px', 139),
+			default = 40,
+			argument = sliderArg(-200, math.floor(hudLayerSize.x) + 200, 1, 'px', 40),
 		},
 		{
-			key = 'VIAL_WIDTH',
-			name = 'Vial Width',
-			description = 'The tube art is 13px wide.',
+			key = 'VIAL_Y_POS',
+			name = 'Vertical Position',
+			description = 'Pixels from the top.',
 			renderer = R_SLIDER,
-			default = 13,
-			argument = sliderArg(4, 96, 1, 'px', 13),
+			default = math.max(40, math.floor(hudLayerSize.y) - 260),
+			argument = sliderArg(-50, math.floor(hudLayerSize.y), 1, 'px',
+				math.max(40, math.floor(hudLayerSize.y) - 260)),
+		},
+		{
+			key = 'VIAL_SIZE',
+			name = 'Vial Size',
+			description = 'Overall height of the whole assembly -- collar, tube, clasp and\n'
+				.. 'bulb together. Width follows, so the fittings keep the\n'
+				.. 'proportions they were drawn with. 172 is the art at 1:1.',
+			renderer = R_SLIDER,
+			default = 172,
+			argument = sliderArg(24, 600, 1, 'px', 172),
 		},
 		{
 			key = 'HEALTH_COLOR',
 			name = 'Health Colour',
-			description = 'Hex, no #. The block behind the glass.',
+			description = 'Hex, no #. The liquid in the tube. The default is the colour of\n'
+				.. 'the supplied red tube exactly.',
 			renderer = R_COLOR,
-			default = colorDefault('C41C1C'),
+			default = colorDefault('B60000'),
 			argument = { presetColors = presetColors },
 		},
 		{
 			key = 'STAMINA_COLOR',
 			name = 'Stamina Colour',
-			description = 'Hex, no #.',
+			description = 'Hex, no #. The default is the colour of the supplied green tube\n'
+				.. 'exactly.',
 			renderer = R_COLOR,
-			default = colorDefault('2EA83A'),
+			default = colorDefault('349F00'),
 			argument = { presetColors = presetColors },
 		},
 		{
@@ -313,14 +312,74 @@ settingsTemplate.VIALS = {
 			argument = { presetColors = presetColors },
 		},
 		{
-			key = 'EMPTY_ALPHA',
-			name = 'Empty Portion',
-			description = 'Opacity of the colour above the fill line. At 0 the empty part of\n'
-				.. 'the tube is bare glass. Raise it to keep the tube readable as a\n'
-				.. 'shape when it is nearly drained.',
+			key = 'BULB_TEXTURE',
+			name = 'Bulb',
+			description = 'The glass reservoir under the clasp.\n'
+				.. 'VIAL_BOTT_EMPTY is the clean bulb, which is what the dreg is\n'
+				.. 'drawn into. VIAL_CLEAR_GLASS has a dreg of its own baked in, so\n'
+				.. 'turn Dreg off if you pick it or you get two.',
+			renderer = R_SELECT,
+			default = 'textures/dbsvials/VIAL_BOTT_EMPTY.png',
+			argument = selectArg {
+				'textures/dbsvials/VIAL_BOTT_EMPTY.png',
+				'textures/dbsvials/VIAL_CLEAR_GLASS.png',
+			},
+		},
+		{
+			key = 'BULB_TINT',
+			name = 'Bulb Tint',
+			description = 'Multiplied over the bulb glass. White leaves it untouched.',
+			renderer = R_COLOR,
+			default = colorDefault('FFFFFF'),
+			argument = { presetColors = presetColors },
+		},
+		{
+			key = 'BULB_ALPHA',
+			name = 'Bulb Opacity',
+			description = '',
 			renderer = R_SLIDER,
-			default = 0.0,
-			argument = sliderArg(0, 1, 0.05, '', 0.0),
+			default = 1.0,
+			argument = sliderArg(0, 1, 0.05, '', 1.0),
+		},
+		{
+			key = 'SHOW_RESIDUE',
+			name = 'Dreg',
+			description = 'The settled residue in the bottom of the bulb, tinted with the\n'
+				.. 'vial\'s own colour -- red in the health vial, green in the\n'
+				.. 'stamina one, as in the supplied examples.',
+			renderer = 'checkbox',
+			default = true,
+		},
+		{
+			key = 'RESIDUE_ALPHA',
+			name = 'Dreg Opacity',
+			description = '',
+			renderer = R_SLIDER,
+			default = 1.0,
+			argument = sliderArg(0, 1, 0.05, '', 1.0),
+		},
+		{
+			key = 'SHOW_CLASP',
+			name = 'Clasp',
+			description = 'The diamond bracket where the tube meets the bulb. It is what\n'
+				.. 'hides the join, so turning it off leaves the tube\'s end visible.',
+			renderer = 'checkbox',
+			default = true,
+		},
+		{
+			key = 'SHOW_CAP',
+			name = 'Collar',
+			description = 'The pronged collar that caps the tube.',
+			renderer = 'checkbox',
+			default = true,
+		},
+		{
+			key = 'FITTING_TINT',
+			name = 'Fittings Tint',
+			description = 'Multiplied over the clasp and the collar together.',
+			renderer = R_COLOR,
+			default = colorDefault('FFFFFF'),
+			argument = { presetColors = presetColors },
 		},
 	},
 }
@@ -340,6 +399,24 @@ settingsTemplate.RUNES = {
 	permanentStorage = true,
 	order = getOrder(),
 	settings = {
+		{
+			key = 'RUNE_X_POS',
+			name = 'Horizontal Position',
+			description = 'Pixels from the left. The runes are their own widget -- drag\n'
+				.. 'them anywhere, independently of the vials.',
+			renderer = R_SLIDER,
+			default = 140,
+			argument = sliderArg(-200, math.floor(hudLayerSize.x) + 200, 1, 'px', 140),
+		},
+		{
+			key = 'RUNE_Y_POS',
+			name = 'Vertical Position',
+			description = 'Pixels from the top.',
+			renderer = R_SLIDER,
+			default = math.max(40, math.floor(hudLayerSize.y) - 260),
+			argument = sliderArg(-50, math.floor(hudLayerSize.y), 1, 'px',
+				math.max(40, math.floor(hudLayerSize.y) - 260)),
+		},
 		{
 			key = 'RUNE_HEIGHT',
 			name = 'Rune Column Height',
@@ -677,8 +754,9 @@ I.Settings.registerPage {
 	l10n = 'none',
 	name = 'dbsHUD - DBSVials',
 	description = 'Health and stamina as filling glass vials, magicka as eight runes.\n'
-		.. '- Click and drag to move them.\n'
-		.. '- Click and mousewheel to resize.\n'
+		.. '- The vials and the runes are separate widgets. Drag either on its\n'
+		.. '  own; each remembers its own position.\n'
+		.. '- Click and mousewheel while dragging to resize that widget.\n'
 		.. '- Readability holds the settings for reading the meters without\n'
 		.. '  relying on colour.',
 }
@@ -689,7 +767,8 @@ I.Settings.registerPage {
 
 local COLOR_KEYS = { HEALTH_COLOR = true, STAMINA_COLOR = true,
                      GLASS_TINT = true, RUNE_TINT = true, GLOW_TINT = true,
-                     NUMBER_COLOR = true, HUD_BORDER_COLOR = true }
+                     NUMBER_COLOR = true, HUD_BORDER_COLOR = true,
+                     BULB_TINT = true, FITTING_TINT = true }
 
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
@@ -740,9 +819,12 @@ local REBUILD = {
 	HUD_PADDING = true, HUD_BACKGROUND = true, HUD_LOCK = true,
 	LAYOUT = true, SPACING = true,
 	SHOW_HEALTH = true, SHOW_STAMINA = true, SHOW_RUNES = true,
-	VIAL_HEIGHT = true, VIAL_WIDTH = true,
+	VIAL_SIZE = true,
 	RUNE_HEIGHT = true, RUNE_WIDTH = true, RUNE_FILL_FROM = true,
-	GLASS_TEXTURE = true,
+	-- Texture paths and the piece toggles: each one changes which images exist
+	-- in the tree, so the tree has to be rebuilt rather than poked.
+	GLASS_TEXTURE = true, BULB_TEXTURE = true,
+	SHOW_RESIDUE = true, SHOW_CLASP = true, SHOW_CAP = true,
 	SHOW_NUMBERS = true, NUMBER_SIZE = true, NUMBER_FORMAT = true,
 }
 

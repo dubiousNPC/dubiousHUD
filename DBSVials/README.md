@@ -26,30 +26,97 @@ separate download.
 
 Settings live under **dbsHUD - DBSVials**.
 
-- Click and drag to move the meters.
-- Click and mousewheel to resize them. The vials and the rune column scale
-  together, so the set keeps its proportions.
+- Click and drag either widget to move it. They move independently.
+- Click and mousewheel while dragging to resize whichever one you are holding.
+
+---
+
+## Two widgets, not one
+
+The vials and the rune column are separate widgets with separate positions.
+Drag either one on its own; each remembers where you put it, and each resizes on
+its own when you click-and-scroll it. Put them in opposite corners if you like.
+
+They share the stat-reading pass and the frame styling, and nothing else.
 
 ---
 
 ## The vials
 
-`glass_tube.png` is 13 × 139 and almost entirely transparent — mean alpha 118 at
-its brightest column, nothing at all down either edge. It is a highlight streak
-and a foot, not a container.
+Each vial is six pieces, all placed from figures measured off the supplied art:
 
-So the vial is two layers: a block of colour behind, the glass in front. The
-colour spans the full width, because there is no rim for it to stay inside of.
-It fills from the bottom by moving its top edge down as it shrinks — position
-`y = 1 − fraction` against size `y = fraction`. Leaving the position at zero
-would drain it from the bottom up, which is the wrong way round for a tube.
+```
+VIAL_TOP.png          the pronged collar, capping the tube
+glass_tube.png        the glass, drawn over the liquid
+VIAL_FILL.png         the liquid  (derived -- see below)
+VIAL_CLASP.png        the diamond bracket at the junction
+VIAL_BOTT_EMPTY.png   the glass bulb below
+VIAL_RESIDUE.png      the dreg settled in the bulb
+```
 
-Health is red and stamina green by default, as specified. Both are configurable,
-and there is a reason you might want to change them — see **Readability** below.
+Drawn bulb, dreg, liquid, glass, clasp, collar — the clasp goes over the glass
+because hiding the tube's end is its whole job.
 
-`Empty Portion` puts a faint wash of the same colour above the fill line. At the
-default of 0 the empty part of the tube is bare glass; raise it if you want the
-tube to stay readable as a shape when it is nearly drained.
+### The liquid does not span the tube
+
+The TUBE pngs are a single flat colour occupying **x3..x9** of a 13px canvas. So
+the liquid is 7px wide with 3px of padding either side, and the last two rows
+taper to 5px. That padding is the glass wall; filling the full width, as the
+first version did, makes the tube look like a painted bar instead of a vessel.
+
+`VIAL_FILL.png` is a white master cut to exactly that shape, so the colour
+setting tints it. The supplied tubes are one flat colour each, so the shipped
+defaults — `B60000` and `349F00` — reproduce them exactly.
+
+The liquid is **cut, not stretched**: there is one pre-built texture per fill
+height, showing the bottom N rows of the tube art. Stretching a single texture
+would squash all 139 rows into however many the fill currently occupies, which
+distorts the taper at the bottom. 140 textures, built once at load.
+
+### How the pieces register
+
+The base art is a 40px canvas holding two pieces already registered against each
+other — the bulb at x10..x18, y24..y58, and the clasp diamond at x2..x28,
+y24..y48. Drawing both at the same rect lines them up by construction; there is
+nothing to align by hand.
+
+The tube sits at **x8** on that canvas, which puts its liquid column inside the
+bulb's mouth with one pixel of glass either side:
+
+```
+bulb mouth     x10 .............. x18
+liquid            x11 ........ x17
+```
+
+Two overlaps were measured by rendering a sweep rather than guessed:
+
+| | | |
+|---|---|---|
+| **clasp overlap** | 12px | The tube's tapered last rows land behind the clasp's upper edge and the join disappears. At 8 or less the pale taper pokes out above the diamond. |
+| **collar overlap** | 9px | Its dark interior reads as the vial's neck. |
+
+Together that makes the assembly **40 × 172** at 1:1, which is the default
+**Vial Size**. One number scales the whole thing, so the fittings keep the
+proportions they were drawn with.
+
+### The travel is all visible
+
+The bottom 12 rows sit behind the clasp and the top 9 behind the collar. A fill
+that ran the tube's full length would spend 15% of its range on rows nobody can
+see — the difference between 93% and 100% health would happen entirely under the
+collar. So the travel is mapped onto the rows that actually show. An empty vial
+still has those twelve hidden rows filled, behind the clasp, where they read as
+nothing.
+
+### The dreg
+
+`VIAL_RESIDUE.png` is tinted with the vial's own colour, so health keeps a red
+dreg and stamina a green one, as in the supplied examples. It is the same
+texture in both.
+
+**Bulb** offers the two supplied bulbs: `VIAL_BOTT_EMPTY` is the clean one, which
+is what the dreg is drawn into. `VIAL_CLEAR_GLASS` has a dreg of its own baked
+in — pick it and turn **Dreg** off, or you get two.
 
 ---
 
@@ -140,6 +207,8 @@ The quantisation is the whole trick:
   frame for a change nobody can see.
 - A **rune** is redrawn only when it lights or goes out — eight states, or 16
   alpha steps with the partial fade on.
+- The two widgets are updated **separately**: a health tick that changes nothing
+  in the rune column does not touch the rune column.
 - The **pulse** is quantised to the same 16 steps, so a warning can poke the UI
   at most 16 times a cycle rather than once a frame.
 - The **numbers** are compared as the rendered string, so a stat drifting within
@@ -171,18 +240,22 @@ LUA=texlua dev/check_all.sh   # a LuaTeX install already carries one
 `dev/load_check.lua` stubs enough of the OpenMW API to load the mod offline,
 including live dynamic-stat accessors the tests can drive. The suite:
 
-- **78 behavioural checks** against the real module and the real widget tree.
+- **115 behavioural checks** against the real module and the real widget tree.
   `dev/test_vials.lua` deliberately re-implements none of the module's logic — a
   test that mirrors the code only ever proves the mirror is faithful. It drives
   `onUpdate` and reads the tree that was actually built.
 - Every settings branch that changes the shape of the tree, loaded for real.
-- The rune slices checked for gaps and overlaps at four column heights.
+- The six vial pieces checked for register at five sizes, and the rune slices
+  for gaps and overlaps at four column heights. Both are read off the tree the
+  module builds, not asserted against a copy of the arithmetic.
 - Stat extremes, including all three at zero and magicka at 0.1%.
 - A `pcall` audit over the shipped scripts.
 
 The behavioural tests are mutation-checked. Flipping the rune fill order,
-dropping the bottom-anchor on the fill, removing the stat clamp, or drawing the
-glow over the base runes instead of behind them each make the suite fail.
+removing the stat clamp, drawing the glow over the base runes instead of behind
+them, setting the clasp overlap to zero, letting the fill travel run under the
+collar, floating the collar off the tube, rounding the rune slices so they open
+a one-pixel gap, and tinting both dregs the same each make the suite fail.
 
 ---
 
@@ -212,7 +285,8 @@ local I = require('openmw.interfaces')
 
 I.DBSVials.getFractions()   -- { health = , stamina = , magicka = }  0..1
 I.DBSVials.getLitRunes()    -- how many of the eight are lit, and the total
-I.DBSVials.setVisible(false)
+I.DBSVials.setVisible(false)           -- both
+I.DBSVials.setVisible(false, 'runes')  -- or just one: 'vials' / 'runes'
 I.DBSVials.isVisible()
 ```
 
@@ -220,7 +294,7 @@ From a script that cannot see the interface — a global script, or a mod that
 loads earlier — the same is reachable by event:
 
 ```lua
-player:sendEvent('DBSVialsSetVisible', { show = false })
+player:sendEvent('DBSVialsSetVisible', { show = false, which = 'runes' })
 ```
 
 ---
@@ -228,8 +302,11 @@ player:sendEvent('DBSVialsSetVisible', { show = false })
 ## Credits
 
 - Vial, rune and glow art: **Dubious**.
-- `glass_tube.png`, `KainGameRUNES.png`, `KainGame_RUNES_GLOW.png` ship
-  unmodified.
+- All supplied art ships unmodified: `glass_tube.png`, `VIAL_TOP.png`,
+  `VIAL_CLASP.png`, `VIAL_BOTT_EMPTY.png`, `VIAL_CLEAR_GLASS.png`,
+  `VIAL_RESIDUE.png`, `KainGameRUNES.png`, `KainGame_RUNES_GLOW.png`.
+  `VIAL_FILL.png` is the one derived file: a white master cut to the shape the
+  TUBE pngs define, so the colour setting can tint it.
 - Stat-tracking approach and the discipline of not redrawing a HUD that has not
   changed: [ErnMMUI](https://github.com/erinpentecost/ErnMMUI) by Erin
   Pentecost, AGPL-3.0. No ErnMMUI code is included here.

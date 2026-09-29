@@ -60,18 +60,40 @@ GLASS_TEXTURE=
 RUNE_FILL_FROM=Top
 GLOW_PARTIAL=false
 LOW_WARNING=All three
-VIAL_HEIGHT=512,VIAL_WIDTH=96,RUNE_HEIGHT=512,RUNE_WIDTH=256
-VIAL_HEIGHT=32,VIAL_WIDTH=4,RUNE_HEIGHT=32,RUNE_WIDTH=8
+VIAL_SIZE=600,RUNE_HEIGHT=512,RUNE_WIDTH=256
+VIAL_SIZE=24,RUNE_HEIGHT=32,RUNE_WIDTH=8
+SHOW_CLASP=false
+SHOW_CAP=false
+SHOW_RESIDUE=false
+SHOW_CLASP=false,SHOW_CAP=false,SHOW_RESIDUE=false
+BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 CONFIGS
 
 # The runes have to land on the runes at every column height, or the glow sits
 # off its own glyph. Read off the tree the module builds, not asserted against a
 # copy of the arithmetic.
+# The vial is six pieces placed from measured art figures and scaled by one
+# factor. If any of them were placed with an unscaled number it would drift out
+# of register at a non-default size and nowhere else.
+echo "--- vial pieces stay in register at any size"
+for size in 24 86 172 344 600; do
+    out=$(PRESEED="VIAL_SIZE=$size" DUMP_TREE=vialsHud "$LUA" dev/load_check.lua . \
+        scripts/dbsvials/DBV_p.lua 2>&1)
+    n=$(echo "$out" | grep -cE '^      (bulb|residue|fill|glass|clasp|cap)health')
+    last=$(echo "$out" | tail -1)
+    if [ "$n" = 6 ] && [ "$last" = OK ]; then
+        printf '  size %-4s OK  (6 pieces)\n' "$size"
+    else
+        printf '  size %-4s FAIL  %s pieces, %s\n' "$size" "$n" "$last"
+        fail=1
+    fi
+done
+
 echo "--- rune slices line up at any size"
 for h in 64 139 276 512; do
-    out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=vialsHud "$LUA" dev/load_check.lua . \
+    out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
         scripts/dbsvials/DBV_p.lua 2>&1)
-    n=$(echo "$out" | grep -cE '^      glow[1-8] ')
+    n=$(echo "$out" | grep -cE '^    glow[1-8] ')
     last=$(echo "$out" | tail -1)
     if [ "$n" = 8 ] && [ "$last" = OK ]; then
         printf '  height %-4s OK  (8 slices)\n' "$h"
