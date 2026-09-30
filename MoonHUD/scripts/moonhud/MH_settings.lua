@@ -725,6 +725,20 @@ local function loadSlot(slotKey)
 	return writeValues(storage.playerSection(SLOT_SECTION):get(slotKey))
 end
 
+--- Puts the save selector back to '--' on the next tick.
+--- Deferred rather than immediate: see the note in handlePresetSetting. If the
+--- timer API is not there the selector simply stays where the user left it,
+--- which costs one extra click to save to the same slot twice and is a great
+--- deal better than throwing.
+local function resetSaveSelector()
+	if not (async and async.newUnsavableSimulationTimer) then return end
+	async:newUnsavableSimulationTimer(0, function()
+		applyingPreset = true
+		storage.playerSection(settingsTemplate.PRESETS.key):set('PRESET_SAVE', '--')
+		applyingPreset = false
+	end)
+end
+
 --- Returns true if the setting was a preset control and has been dealt with.
 local function handlePresetSetting(setting)
 	if not PRESET_KEYS[setting] then return false end
@@ -746,12 +760,17 @@ local function handlePresetSetting(setting)
 
 	-- PRESET_SAVE: act, then put the selector back so the same slot can be
 	-- written twice in a row.
+	--
+	-- That reset CANNOT happen here. The engine refuses a write to a section
+	-- from inside that section's own handler -- "Storage handler shouldn't
+	-- change the storage section it handles (leads to an infinite recursion)"
+	-- -- and this handler is subscribed to the very section the selector lives
+	-- in. So the write is pushed to the next simulation tick, outside the
+	-- callback, where it is an ordinary write like any other.
 	local slot = SAVE_TO[section:get('PRESET_SAVE') or '']
 	if slot then
 		saveSlot(slot)
-		applyingPreset = true
-		section:set('PRESET_SAVE', '--')
-		applyingPreset = false
+		resetSaveSelector()
 	end
 	return true
 end
@@ -812,36 +831,6 @@ local function readAllSettings()
 	end
 end
 
--- One-time repair of colours stored by an older build. TEXT_COLOR used the
--- textLine renderer, which stores a hex STRING; it now uses SuperColorPicker4,
--- whose contract is util.color. Player storage outlives saves, so a profile
--- that ever used the old build still holds the string. normalise() hides that
--- from the HUD, but the menu renderer receives the raw value and fails with
--- "attempt to call method 'asHex' (a nil value)", leaving the setting
--- unrenderable. Rewrite the stored value once, and say so.
---
--- Runs before the subscriptions below exist, so these writes do not re-enter
--- the change handler. Skipped under the textLine renderer, where a string IS
--- the correct stored form. Until the first game load runs this, the main-menu
--- settings page still shows the old error; that cannot be fixed from here
--- without editing the shared renderer, which other mods bundle byte-identical.
-local function migrateLegacyColours()
-	if R_COLOR == 'textLine' then return end
-	for _, template in pairs(settingsTemplate) do
-		local section = storage.playerSection(template.key)
-		for _, entry in pairs(template.settings) do
-			local v = section:get(entry.key)
-			if COLOR_KEYS[entry.key] and type(v) == 'string' then
-				local c = normalise(entry.key, v)
-				section:set(entry.key, c)
-				print(('[MoonHUD] %s was stored as the string %q by an older build; '
-					.. 'converted to colour %s'):format(entry.key, v, c:asHex()))
-			end
-		end
-	end
-end
-
-migrateLegacyColours()
 readAllSettings()
 
 for _, template in pairs(settingsTemplate) do

@@ -59,6 +59,10 @@ end
 local record = {
 	groups = {}, pages = {}, textures = {}, subscriptions = 0,
 	triggers = {}, warnings = {}, bundledUsed = {}, renderers = {},
+	-- Every ui.create result, in creation order. The widgets themselves are
+	-- locals inside the mod, so this is the only handle the check has on the
+	-- tree that was actually built.
+	elements = {},
 }
 
 -- Renderers OpenMW ships with. Anything else has to come from another mod, and
@@ -127,20 +131,6 @@ do
 	end
 end
 
--- SEED is PRESEED without the pin: the value starts in storage and the mod may
--- overwrite it. Needed to test anything that rewrites stored values (such as
--- the legacy colour migration), which PRESEED would mask on every read.
-local SEED = {}
-do
-	local raw = os.getenv('SEED')
-	if raw then
-		for pair in raw:gmatch('[^,]+') do
-			local k, v = pair:match('^%s*(%S+)%s*=%s*(.*)$')
-			if k then SEED[k] = tonumber(v) or v end
-		end
-	end
-end
-
 local stubs = {}
 
 stubs['openmw.util'] = {
@@ -188,13 +178,24 @@ stubs['openmw.ui'] = {
 			error('ui.texture: needs a table with a string path', 2)
 		end
 		record.textures[#record.textures + 1] = opts.path
-		return { _texture = opts.path }
+		-- offset and size are kept, not just the path: a texture cut from the
+		-- wrong sub-rect draws the wrong part of a sheet, and dropping them here
+		-- would make that invisible to every test.
+		return {
+			_texture = opts.path,
+			_offset = opts.offset,
+			_size = opts.size,
+		}
 	end,
 	_getMenuTransparency = function() return 0.7 end,
 	create = function(layout)
 		local e = { layout = layout }
+		record.elements[#record.elements + 1] = e
 		function e:update() end
-		function e:destroy() end
+		-- A destroyed element has to stay destroyed, or findNode hands a test
+		-- the tree from before the last rebuild and every assertion after that
+		-- is made against a widget the game can no longer see.
+		function e:destroy() self._destroyed = true end
 		return e
 	end,
 }
@@ -208,7 +209,23 @@ stubs['openmw.async'] = {
 		return b
 	end,
 	registerTimerCallback = function(_, f) return f end,
+	-- Timers queue rather than fire inline, and the queue is drained once the
+	-- outermost storage dispatch has finished. That is what "next tick" means
+	-- for the one thing this mod uses a timer for: a write that is illegal
+	-- inside a handler and fine immediately after it.
+	newUnsavableSimulationTimer = function(a, b, c)
+		local fn = (type(a) == 'function') and a or ((type(b) == 'function') and b or c)
+		if type(fn) == 'function' then
+			pendingTimers[#pendingTimers + 1] = fn
+		end
+	end,
+	newUnsavableGameTimer = function(a, b, c)
+		return stubs['openmw.async'].newUnsavableSimulationTimer(a, b, c)
+	end,
 }
+
+pendingTimers = {}
+local dispatchDepth = 0
 
 stubs['openmw.storage'] = {
 	globalSection = function(key) return stubs['openmw.storage'].playerSection('G:' .. key) end,
@@ -216,16 +233,43 @@ stubs['openmw.storage'] = {
 	playerSection = function(key)
 		if storageSections[key] then return storageSections[key] end
 		local sec = { _key = key, _v = {}, _subs = {} }
-		for k, v in pairs(SEED) do sec._v[k] = v end
 		function sec:get(k)
 			if PRESEED[k] ~= nil then return PRESEED[k] end
 			return self._v[k]
 		end
 		-- A stub that records subscribers but never calls them tests nothing:
 		-- every settings-change path in a mod hangs off this dispatch.
+		--
+		-- The engine refuses a write to a section from inside that section's own
+		-- handler, because it would recurse:
+		--   "Storage handler shouldn't change the storage section it handles"
+		-- Without that rule here the stub is more permissive than the game, and
+		-- a mod that breaks it passes every offline check and then throws on the
+		-- first settings change in play. So the stub enforces it too.
 		function sec:set(k, v)
+			if self._dispatching then
+				error("Storage handler shouldn't change the storage section it "
+					.. "handles (leads to an infinite recursion): " .. tostring(self._key)
+					.. '.' .. tostring(k), 2)
+			end
 			self._v[k] = v
-			for _, cb in ipairs(self._subs) do cb(self._key, k) end
+			self._dispatching = true
+			dispatchDepth = dispatchDepth + 1
+			local ok, err = pcall(function()
+				for _, cb in ipairs(self._subs) do cb(self._key, k) end
+			end)
+			self._dispatching = false
+			dispatchDepth = dispatchDepth - 1
+			if not ok then error(err, 0) end
+			-- Drain deferred timers once we are back outside every handler.
+			if dispatchDepth == 0 then
+				local guard = 0
+				while #pendingTimers > 0 and guard < 64 do
+					guard = guard + 1
+					local fn = table.remove(pendingTimers, 1)
+					fn()
+				end
+			end
 		end
 		function sec:subscribe(cb)
 			record.subscriptions = record.subscriptions + 1
@@ -359,10 +403,57 @@ stubs['openmw.input'] = {
 	registerActionHandler = function() end,
 }
 
+-- Dynamic stats, driven by a table the tests can poke between update passes.
+-- STATS=health=0.5,magicka=0.375 in the environment sets opening fractions.
+STUB_STATS = {
+	health  = { current = 100, base = 100, modifier = 0 },
+	fatigue = { current = 100, base = 100, modifier = 0 },
+	magicka = { current = 100, base = 100, modifier = 0 },
+}
+do
+	local raw = os.getenv('STATS')
+	if raw then
+		local alias = { stamina = 'fatigue' }
+		for pair in raw:gmatch('[^,]+') do
+			local k, v = pair:match('^%s*(%S+)%s*=%s*(.*)$')
+			k = alias[k] or k
+			if k and STUB_STATS[k] and tonumber(v) then
+				STUB_STATS[k].current = tonumber(v) * STUB_STATS[k].base
+			end
+		end
+	end
+end
+
+--- Sets a stat by fraction of its maximum. Used by the tests.
+function setStatFraction(name, frac)
+	local alias = { stamina = 'fatigue' }
+	local s = STUB_STATS[alias[name] or name]
+	s.current = frac * (s.base + s.modifier)
+end
+
+-- The mod resolves these once at load and then reads .current every frame, so
+-- the stub has to hand back a live view rather than a snapshot.
+local function statAccessor(name)
+	return setmetatable({}, {
+		__index = function(_, k) return STUB_STATS[name][k] end,
+		__newindex = function(_, k, v) STUB_STATS[name][k] = v end,
+	})
+end
+
 stubs['openmw.types'] = {
 	Player = {
 		isCharGenFinished = function() return true end,
 		getBirthSign = function() return 'sign' end,
+	},
+	Actor = {
+		stats = {
+			dynamic = {
+				health  = function() return statAccessor('health') end,
+				fatigue = function() return statAccessor('fatigue') end,
+				magicka = function() return statAccessor('magicka') end,
+			},
+		},
+		isDead = function() return false end,
 	},
 }
 
@@ -439,7 +530,7 @@ for i = 2, #arg do
 
 	local ok, result = pcall(realRequire, modName)
 	_G.LOADED = _G.LOADED or {}
-	if ok then _G.LOADED[modName] = result end
+	if ok then _G.LOADED[modName] = result; _G.MODULE = result end
 	if not ok then
 		failures = failures + 1
 		print('  LOAD ERROR: ' .. tostring(result))
@@ -454,6 +545,28 @@ for i = 2, #arg do
 					print('  onInit ERROR: ' .. tostring(err))
 				else
 					print('  onInit ok')
+				end
+			end
+			-- onLoad is what actually builds the widget tree. Without it the
+			-- check only proved the file parses and registers its settings;
+			-- createCompassHud, layerGeometry and every layer path went
+			-- untested for every preset.
+			if h.onLoad then
+				local okL, err = pcall(h.onLoad, nil)
+				if not okL then
+					failures = failures + 1
+					print('  onLoad ERROR: ' .. tostring(err))
+				else
+					print('  onLoad ok')
+				end
+			end
+			if h.onUpdate then
+				local okU, err = pcall(h.onUpdate, 0.016)
+				if not okU then
+					failures = failures + 1
+					print('  onUpdate ERROR: ' .. tostring(err))
+				else
+					print('  onUpdate ok')
 				end
 			end
 			if h.onFrame then
@@ -506,6 +619,44 @@ if #record.warnings > 0 then
 	end
 end
 
+-- Tree helpers for API_SCRIPT tests: findNode/collectNodes reach into the
+-- widget tree the module actually built, so a test can assert against the real
+-- thing instead of re-implementing the module's logic and then testing the
+-- re-implementation.
+local function eachNode(fn)
+	local seen = {}
+	local function walk(node)
+		if type(node) ~= 'table' or seen[node] then return end
+		seen[node] = true
+		if node.name then fn(node) end
+		local c = node.content
+		if c and c._items then
+			for _, child in ipairs(c._items) do walk(child) end
+		end
+		if node.layout then walk(node.layout) end
+		if node.template and node.template.content and node.template.content._items then
+			for _, child in ipairs(node.template.content._items) do walk(child) end
+		end
+	end
+	for _, e in ipairs(record.elements) do
+		if not e._destroyed then walk(e) end
+	end
+end
+
+function findNode(name)
+	local found
+	eachNode(function(n) if n.name == name and not found then found = n end end)
+	return found
+end
+
+function collectNodes(prefix)
+	local out = {}
+	eachNode(function(n)
+		if n.name and n.name:sub(1, #prefix) == prefix then out[n.name] = n end
+	end)
+	return out
+end
+
 -- API_SCRIPT=<path> runs a Lua file after loading, with the stubs in place and
 -- the loaded modules' interfaces available as _G.LOADED. Lets the real interface
 -- be driven without launching the game.
@@ -520,6 +671,11 @@ if apiScript then
 		if not ok then
 			failures = failures + 1
 			print('  API SCRIPT ERROR: ' .. tostring(e))
+		elseif type(SCRIPT_FAILURES) == 'number' then
+			-- A test script that counted its own failures reports them here, so
+			-- a red check actually fails the run rather than printing and
+			-- exiting 0.
+			failures = failures + SCRIPT_FAILURES
 		end
 	end
 end
@@ -528,7 +684,19 @@ end
 -- size and position, so layout can be inspected without launching the game.
 local dumpName = os.getenv('DUMP_TREE')
 if dumpName then
-	local rootEl = _G[dumpName]
+	-- DUMP_TREE=* walks every created element; a name walks the one whose
+	-- layout carries it. It used to read _G[name], which was always nil because
+	-- the mod keeps its widgets local, so this printed nothing whatever it was
+	-- given.
+	local roots = {}
+	for _, e in ipairs(record.elements) do
+		local lay = e.layout
+		if not e._destroyed and
+		   (dumpName == '*' or (type(lay) == 'table' and lay.name == dumpName)) then
+			roots[#roots + 1] = e
+		end
+	end
+	local rootEl = roots[1]
 	local function walk(node, depth)
 		if type(node) ~= 'table' then return end
 		local pad = string.rep('  ', depth)

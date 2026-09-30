@@ -376,3 +376,24 @@ player:sendEvent('DBSVialsFlashRunes', { seconds = 1.5 })
   Pentecost, AGPL-3.0. No ErnMMUI code is included here.
 - SuperSettingsRenderers, bundled unaltered.
 - Settings page style follows Sun's Dusk, as do MoonHUD and BSCompass.
+
+---
+
+## A note on storage handlers
+
+OpenMW refuses a storage write made from inside that section's own subscribe
+handler:
+
+```
+Storage handler shouldn't change the storage section it handles
+(leads to an infinite recursion)
+```
+
+The preset machinery trips over this in one place: the "Save current settings
+to" selector puts itself back to `--` after saving, so the same slot can be
+written twice in a row, and that write lands in the section the handler is
+subscribed to. It is deferred to the next simulation tick instead, where it is
+an ordinary write.
+
+`dev/load_check.lua` enforces the same rule, so a mod that breaks it fails
+offline rather than on the first settings change in play.

@@ -681,6 +681,20 @@ local function loadSlot(slotKey)
 	return writeValues(storage.playerSection(SLOT_SECTION):get(slotKey))
 end
 
+--- Puts the save selector back to '--' on the next tick.
+--- Deferred rather than immediate: see the note in handlePresetSetting. If the
+--- timer API is not there the selector simply stays where the user left it,
+--- which costs one extra click to save to the same slot twice and is a great
+--- deal better than throwing.
+local function resetSaveSelector()
+	if not (async and async.newUnsavableSimulationTimer) then return end
+	async:newUnsavableSimulationTimer(0, function()
+		applyingPreset = true
+		storage.playerSection(settingsTemplate.PRESETS.key):set('PRESET_SAVE', '--')
+		applyingPreset = false
+	end)
+end
+
 --- Returns true if the setting was a preset control and has been dealt with.
 local function handlePresetSetting(setting)
 	if not PRESET_KEYS[setting] then return false end
@@ -702,12 +716,17 @@ local function handlePresetSetting(setting)
 
 	-- PRESET_SAVE: act, then put the selector back so the same slot can be
 	-- written twice in a row.
+	--
+	-- That reset CANNOT happen here. The engine refuses a write to a section
+	-- from inside that section's own handler -- "Storage handler shouldn't
+	-- change the storage section it handles (leads to an infinite recursion)"
+	-- -- and this handler is subscribed to the very section the selector lives
+	-- in. So the write is pushed to the next simulation tick, outside the
+	-- callback, where it is an ordinary write like any other.
 	local slot = SAVE_TO[section:get('PRESET_SAVE') or '']
 	if slot then
 		saveSlot(slot)
-		applyingPreset = true
-		section:set('PRESET_SAVE', '--')
-		applyingPreset = false
+		resetSaveSelector()
 	end
 	return true
 end

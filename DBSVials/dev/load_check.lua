@@ -209,7 +209,23 @@ stubs['openmw.async'] = {
 		return b
 	end,
 	registerTimerCallback = function(_, f) return f end,
+	-- Timers queue rather than fire inline, and the queue is drained once the
+	-- outermost storage dispatch has finished. That is what "next tick" means
+	-- for the one thing this mod uses a timer for: a write that is illegal
+	-- inside a handler and fine immediately after it.
+	newUnsavableSimulationTimer = function(a, b, c)
+		local fn = (type(a) == 'function') and a or ((type(b) == 'function') and b or c)
+		if type(fn) == 'function' then
+			pendingTimers[#pendingTimers + 1] = fn
+		end
+	end,
+	newUnsavableGameTimer = function(a, b, c)
+		return stubs['openmw.async'].newUnsavableSimulationTimer(a, b, c)
+	end,
 }
+
+pendingTimers = {}
+local dispatchDepth = 0
 
 stubs['openmw.storage'] = {
 	globalSection = function(key) return stubs['openmw.storage'].playerSection('G:' .. key) end,
@@ -223,9 +239,37 @@ stubs['openmw.storage'] = {
 		end
 		-- A stub that records subscribers but never calls them tests nothing:
 		-- every settings-change path in a mod hangs off this dispatch.
+		--
+		-- The engine refuses a write to a section from inside that section's own
+		-- handler, because it would recurse:
+		--   "Storage handler shouldn't change the storage section it handles"
+		-- Without that rule here the stub is more permissive than the game, and
+		-- a mod that breaks it passes every offline check and then throws on the
+		-- first settings change in play. So the stub enforces it too.
 		function sec:set(k, v)
+			if self._dispatching then
+				error("Storage handler shouldn't change the storage section it "
+					.. "handles (leads to an infinite recursion): " .. tostring(self._key)
+					.. '.' .. tostring(k), 2)
+			end
 			self._v[k] = v
-			for _, cb in ipairs(self._subs) do cb(self._key, k) end
+			self._dispatching = true
+			dispatchDepth = dispatchDepth + 1
+			local ok, err = pcall(function()
+				for _, cb in ipairs(self._subs) do cb(self._key, k) end
+			end)
+			self._dispatching = false
+			dispatchDepth = dispatchDepth - 1
+			if not ok then error(err, 0) end
+			-- Drain deferred timers once we are back outside every handler.
+			if dispatchDepth == 0 then
+				local guard = 0
+				while #pendingTimers > 0 and guard < 64 do
+					guard = guard + 1
+					local fn = table.remove(pendingTimers, 1)
+					fn()
+				end
+			end
 		end
 		function sec:subscribe(cb)
 			record.subscriptions = record.subscriptions + 1
