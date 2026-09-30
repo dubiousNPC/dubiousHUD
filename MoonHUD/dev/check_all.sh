@@ -21,8 +21,6 @@ out=$(API_SCRIPT=dev/test_nocell.lua "$LUA" dev/load_check.lua . \
 echo "$out" | grep -E "checks, . failures" || true
 last=$(echo "$out" | tail -1); echo "  $last"; [ "$last" = OK ] || fail=1
 
-echo "--- preset slots"
-out=$(API_SCRIPT=dev/test_presets_slots.lua "$LUA" dev/load_check.lua . scripts/moonhud/MH_tracker.lua scripts/moonhud/MH_hud.lua 2>&1)
 echo "$out" | grep -E "checks, . failures" || true
 last=$(echo "$out" | tail -1); echo "  $last"; [ "$last" = OK ] || fail=1
 

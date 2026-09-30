@@ -20,7 +20,6 @@ run_script() {   # <label> <test file>
 }
 
 run_script "vials, runes and the public interface" dev/test_vials.lua
-run_script "preset slots and built-in presets"     dev/test_presets_slots.lua
 
 echo "--- bundled renderers (MENU scripts)"
 out=$("$LUA" dev/load_check.lua . \

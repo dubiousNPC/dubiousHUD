@@ -19,18 +19,6 @@ local time    = require('openmw_aux.time')
 local I       = require('openmw.interfaces')
 local v2      = util.vector2
 
--- Forward declarations for this file's PRIVATE helpers, which were
--- implicit globals. Declared up here rather than as `local function` at
--- each definition, because at least one is referenced above its
--- definition line and a local is not in scope before its declaration.
---
--- NOT localised: createMoonHud, updateMoonDisplay.
--- This mod uses _G as an inter-module bus. MH_settings.lua is
--- require()d into this same environment and calls those by name, and it
--- writes changed setting values back with `_G[setting] = ...`. Making
--- them local does not error -- the call sites are guarded with
--- `if fn then` -- it silently turns every settings callback into a
--- no-op, which is worse.
 local refreshUiVisibility, UiModeChanged
 
 MODNAME = 'MoonHUD'
@@ -63,22 +51,11 @@ local saveData = {}
 --------------------------------------------------------------------------------
 -- Texture paths
 --------------------------------------------------------------------------------
--- ui.texture is called directly, not through pcall. A missing file is not an
--- error: OpenMW logs "Failed to open image: Resource ... not found" and carries
--- on. The only way ui.texture raises is a malformed argument -- a non-string
--- path, or none at all -- which is a bug in this script, and swallowing it would
--- turn a loud, findable failure into a silently blank widget. It would also hide
--- a future change to the binding, which is the opposite of compatibility.
---
--- So the one thing worth checking is checked explicitly, and anything else is
--- allowed to raise.
 local function validPath(path)
 	return type(path) == 'string' and path ~= ''
 end
 
 
--- One ui.texture per (moon, phase index), cut out of the sheet by offset.
--- Cached because ui.texture registers a resource each call.
 local function atlasTexture(moonName, phaseIndex)
 	-- ATLAS_PRESET names a bundled sheet; 'Custom' falls through to ATLAS_PATH.
 	local path = C.presetPath(ATLAS_PRESET)
@@ -142,7 +119,6 @@ end
 local MONTH_INDEX = {}
 for i, n in ipairs(C.MONTH_NAMES) do MONTH_INDEX[n] = i end
 
--- Push the settings-driven anchor into the tracker whenever it changes.
 local function syncShadeConfig()
 	if not I.MoonTracker or not I.MoonTracker.setShadeConfig then return end
 	I.MoonTracker.setShadeConfig {
@@ -167,11 +143,7 @@ local function enabledElements()
 	return list
 end
 
--- The panel fill. A texture path if one is set, otherwise flat black, tinted and
--- faded by the Panel settings.
 local function backgroundImage(name, sizeProps)
-	-- BACKGROUND_PRESET names a bundled fill. 'None' means flat black, which is
-	-- what the panel drew before any of these existed. 'Custom' uses the path.
 	local path = C.presetPath(BACKGROUND_PRESET)
 	if path == nil and BACKGROUND_PRESET == 'Custom' then path = BACKGROUND_TEXTURE end
 	if not validPath(path) then path = 'black' end
@@ -186,10 +158,6 @@ local function backgroundImage(name, sizeProps)
 	return { type = ui.TYPE.Image, name = name, props = props }
 end
 
--- Widest label the current settings can produce, in characters. The old
--- heuristic was FONT_SIZE * 5, i.e. it assumed five characters; "Waning
--- Crescent" is fifteen, so descriptive labels spilled out of their cell and got
--- clipped by the neighbouring one.
 local function maxLabelChars()
 	local longest = 1
 	if PHASE_NAMING == 'Value' then
@@ -204,8 +172,6 @@ local function maxLabelChars()
 	return longest
 end
 
--- Rough advance width. Measured against MysticCards at pointsize 32, where six
--- characters trim to 101px, giving 0.53 em; 0.58 leaves a little margin.
 local function labelWidth()
 	return math.ceil(maxLabelChars() * (FONT_SIZE or 20) * 0.58)
 end
@@ -222,9 +188,6 @@ local function buildVertex(elementName, cellW, cellH, iconSize, showIcon, showTe
 			props = {
 				resource = atlasTexture(elementName, 0),
 				size = v2(iconSize, iconSize),
-				-- Must be false, or MyGUI draws the atlas cell at its native 64px
-				-- and repeats it to fill the widget. That looks exactly like the
-				-- Icon Size setting doing nothing.
 				tileH = false,
 				tileV = false,
 				position = v2(math.floor((cellW - iconSize) / 2), 0),
@@ -262,9 +225,6 @@ local function buildVertex(elementName, cellW, cellH, iconSize, showIcon, showTe
 	}
 end
 
--- Absolute-positioned triangle. Flex cannot do this, so the vertices are placed
--- by hand inside a Widget of known size. Returns the element and its dimensions,
--- which the circular panel needs in order to size itself.
 local function buildTriangle(inverted)
 	local names = enabledElements()
 	local showIcon = DISPLAY_MODE ~= 'Text'
@@ -340,9 +300,6 @@ local function buildRow(moonName)
 			props = {
 				resource = atlasTexture(moonName, 0),
 				size = v2(iconSize, iconSize),
-				-- Must be false, or MyGUI draws the atlas cell at its native 64px
-				-- and repeats it to fill the widget. That looks exactly like the
-				-- Icon Size setting doing nothing.
 				tileH = false,
 				tileV = false,
 				alpha = 1,
@@ -373,7 +330,6 @@ function createMoonHud()
 	local shape = PANEL_SHAPE or 'Rectangle'
 	local triangle = (LAYOUT == 'Triangle' or LAYOUT == 'Triangle Inverted')
 
-	-- Build the contents first. The circular panel has to know how big they are.
 	local contentElement, contentW, contentH
 	if triangle then
 		contentElement, contentW, contentH = buildTriangle(LAYOUT == 'Triangle Inverted')
@@ -403,8 +359,6 @@ function createMoonHud()
 			moonFlex.content:add(buildRow(name))
 		end
 		contentElement = moonFlex
-		-- Flex auto-sizes at layout time, so its dimensions have to be estimated
-		-- here for the circle to size itself around it.
 		local n = #names
 		local showIcon = DISPLAY_MODE ~= 'Text'
 		local showText = DISPLAY_MODE ~= 'Icons'
@@ -430,14 +384,8 @@ function createMoonHud()
 	local pad = v2(HUD_PADDING or 0, HUD_PADDING or 0)
 
 	if shape == 'Circle' then
-		-- A round plate needs an explicit square canvas, so this branch uses a
-		-- Widget with a known size rather than an auto-sizing Container.
 		local diameter = CIRCLE_SIZE or 0
 		if diameter <= 0 then
-			-- The circle has to enclose the content box, so the governing figure
-			-- is its diagonal, not its longer side. max(w,h) * 1.35 happens to
-			-- land close for a square triangle layout but is badly oversized for
-			-- a tall stack: a 40x124 vertical layout needs 130, not 175.
 			local cw, ch = contentW or 0, contentH or 0
 			if cw <= 0 or ch <= 0 then
 				local fallback = (ICON_SIZE or 32) * 3
@@ -480,9 +428,6 @@ function createMoonHud()
 			},
 			content = ui.content { contentElement },
 		}
-		-- Centre the contents on the plate whatever the layout. Previously only
-		-- the triangle was centred and everything else sat at top-left plus
-		-- padding, which pushed a vertical stack off the edge of the circle.
 		contentElement.props.position = v2(
 			math.floor((diameter - (contentW or 0)) / 2),
 			math.floor((diameter - (contentH or 0)) / 2))
@@ -685,8 +630,6 @@ local function anyMoonVisible()
 			if m.alpha > 0.01 then return true end
 		end
 	end
-	-- No alpha data means we are indoors or the cell is inactive; do not hide
-	-- on the strength of a guess.
 	return not sawAlpha
 end
 

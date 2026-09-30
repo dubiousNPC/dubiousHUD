@@ -569,6 +569,48 @@ for i = 2, #arg do
 					print('  onUpdate ok')
 				end
 			end
+			-- Which table a handler goes in is not cosmetic. The engine only
+			-- calls engineHandlers for engine handlers, and only delivers
+			-- events to eventHandlers, so a name in the wrong table is silently
+			-- never called -- no error, just a feature that does nothing.
+			local ENGINE_NAMES = {
+				onInit = true, onLoad = true, onSave = true, onFrame = true,
+				onUpdate = true, onActive = true, onInactive = true,
+				onInterfaceOverride = true, onTeleported = true,
+				onKeyPress = true, onKeyRelease = true, onConsoleCommand = true,
+				onQuestUpdate = true, onActivated = true,
+			}
+			-- Engine-sent events. These arrive as events, not engine handlers.
+			local EVENT_NAMES = {
+				UiModeChanged = true, HUDTransparencyChange = true,
+				OMWMusicCombatTargetsChanged = true,
+			}
+			for name in pairs(h) do
+				if EVENT_NAMES[name] then
+					failures = failures + 1
+					print('  HANDLER IN THE WRONG TABLE: ' .. name ..
+						' is an event, but it is in engineHandlers -- it will never fire')
+				end
+			end
+			local ev = (type(result) == 'table' and result.eventHandlers) or {}
+			for name in pairs(ev) do
+				if ENGINE_NAMES[name] then
+					failures = failures + 1
+					print('  HANDLER IN THE WRONG TABLE: ' .. name ..
+						' is an engine handler, but it is in eventHandlers -- it will never fire')
+				end
+			end
+
+			-- onLoad fires when a save is loaded; onInit when the script is
+			-- first attached, which is what happens on a new game. A script that
+			-- builds its UI in onLoad and has no onInit draws nothing until
+			-- something else happens to rebuild it.
+			if h.onLoad and not h.onInit then
+				failures = failures + 1
+				print('  MISSING onInit: this script builds in onLoad but has no ' ..
+					'onInit, so nothing is built on a new game')
+			end
+
 			if h.onFrame then
 				local ok3, err = pcall(h.onFrame)
 				if not ok3 then

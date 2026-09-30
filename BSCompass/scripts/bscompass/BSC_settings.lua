@@ -1,13 +1,6 @@
 ---@omw-context player
 -- BSC_settings.lua
 --
--- Settings for BSCompass. Group layout and key naming follow TimeHUD and
--- LocationHUD so the page sits consistently alongside them.
---
--- Each setting is mirrored into a global of the same name (COMPASS_SIZE,
--- HUD_X_POS, ...) which the main script reads directly. Reading a global in
--- onFrame is a lot cheaper than a storage lookup, which matters here because
--- this HUD samples every frame.
 
 local core    = require('openmw.core')
 local ui      = require('openmw.ui')
@@ -23,26 +16,14 @@ MODNAME = MODNAME or 'BSCompass'
 --------------------------------------------------------------------------------
 -- Renderer selection
 --------------------------------------------------------------------------------
--- SuperSettingsRenderers is bundled with this mod, under
--- scripts/SuperSettingsRenderers, and registered by the MENU entries in the
--- .omwscripts file. It is therefore always present and this can stay on.
---
--- Set it to false only if you have stripped the bundled copy out. Naming a
--- renderer that is not registered makes I.Settings.registerGroup fail, which
--- kills the whole script: no settings page and no widget.
 local RENDERER_SELECT = 'SuperSelect3'
 local RENDERER_NUMBER = 'SuperSlider6'
 local RENDERER_COLOR  = 'SuperColorPicker4'
 
--- Kept as names so the whole page can be dropped back to the built-in renderers
--- by editing these three lines, should the bundle ever be stripped out.
 local R_SLIDER = RENDERER_NUMBER
 local R_SELECT = RENDERER_SELECT
 local R_COLOR  = RENDERER_COLOR
 
--- Slider argument in the Sun's Dusk house style: a labelled track with the
--- default marked, the value and reset on a second row. `def` must be the
--- setting's own default or showDefaultMark puts the tick at the minimum.
 local function sliderArg(min, max, step, unit, def, extra)
 	local a = {
 		min = min,
@@ -95,9 +76,6 @@ local key
 --------------------------------------------------------------------------------
 -- Built-in presets
 --------------------------------------------------------------------------------
--- Sparse: only the keys that differ from the shipped defaults. Anything not
--- listed is left alone, so a preset is a nudge rather than a reset. 'Default'
--- is handled separately and does sweep everything.
 BuiltInPresets = {
 	['Minimal'] = {
 		ATLAS_PRESET = 'BSCompasAtlas',
@@ -595,18 +573,6 @@ settingsTemplate[key] = {
 }
 
 --------------------------------------------------------------------------------
--- Registration
-
---------------------------------------------------------------------------------
--- Preset machinery
---------------------------------------------------------------------------------
--- Two user slots plus the built-ins. A slot is a snapshot of every registered
--- setting on this page, kept in its own storage section and written back on
--- demand.
---
--- Saving runs through a select rather than a button on purpose: SuperSelect3's
--- extra buttons send a GLOBAL event, and this mod ships no global script. A
--- select that resets itself needs no second script and no new dependency.
 
 local SLOT_SECTION = 'Settings' .. MODNAME .. 'PresetSlots'
 local SLOT_FOR     = { ['Slot 1'] = 'SLOT1', ['Slot 2'] = 'SLOT2' }
@@ -731,8 +697,6 @@ local function handlePresetSetting(setting)
 	return true
 end
 
---------------------------------------------------------------------------------
-
 for _, template in pairs(settingsTemplate) do
 	I.Settings.registerGroup(template)
 end
@@ -757,16 +721,10 @@ local COLOR_KEYS = { COMPASS_TINT = true, HUD_BORDER_COLOR = true,
                      CARDINAL_TINT = true }
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
-		-- Validated by pattern rather than caught with pcall. util.color.hex
-		-- raises on anything that is not six hex digits, and this is genuinely
-		-- untrusted -- it is whatever was typed into a text field. But a pcall
-		-- here would also swallow a real fault in util.color, so the input is
-		-- checked directly and the call is left to raise if it ever should.
 		local hex = v:gsub('^#', '')
 		if hex:match('^%x%x%x%x%x%x$') then
 			return util.color.hex(hex)
 		end
-		-- Three-digit shorthand, since the settings text says "hex, no #".
 		local short = hex:match('^(%x%x%x)$')
 		if short then
 			return util.color.hex(short:gsub('(%x)', '%1%1'))
@@ -790,16 +748,9 @@ end
 
 readAllSettings()
 
--- Anything that changes the widget tree, or the atlas itself, needs a rebuild.
--- Everything else can be poked straight into the live element.
 local REBUILD = {
 	HUD_BORDER = true, HUD_BORDER_STYLE = true, HUD_BORDER_COLOR = true,
 	HUD_PADDING = true, HUD_BACKGROUND = true, HUD_LOCK = true,
-	-- The static layers are only read when the tree is built, so their tint and
-	-- opacity need a rebuild to show. They were previously in no class at all,
-	-- which meant dragging those pickers did nothing until some other setting
-	-- happened to force a rebuild. A rebuild, not a retile: re-cutting 360
-	-- textures on every tick of a colour drag is what would actually hurt.
 	OVERLAY_TINT = true, OVERLAY_ALPHA = true,
 	FACE_TINT = true, FACE_ALPHA = true,
 	COVER_TINT = true, COVER_ALPHA = true,

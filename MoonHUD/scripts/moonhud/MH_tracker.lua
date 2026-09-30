@@ -127,10 +127,6 @@ end
 --------------------------------------------------------------------------------
 -- Calibration
 --------------------------------------------------------------------------------
--- On any given day the engine reports either floor((D+K)/3) mod 8 or
--- floor((D+K+1)/3) mod 8, depending on whether that moon has passed its
--- moonPhaseHour yet. So a reading is consistent with K if EITHER branch matches.
--- Intersecting candidate sets across days converges within a couple of days.
 
 local function freshCandidates()
 	local t = {}
@@ -150,8 +146,6 @@ local function narrowCalibration(day, index)
 		end
 	end
 	if count == 0 then
-		-- Contradiction: the day counter jumped (console, mod, save transplant).
-		-- Restart calibration from this reading rather than serve stale data.
 		saveData.kCandidates = freshCandidates()
 		return narrowCalibration(day, index)
 	end
@@ -175,13 +169,6 @@ local function calibrationCount()
 	return n
 end
 
--- Sampling only ever at, say, midday leaves TWO adjacent candidates standing:
--- "K, having rolled over" and "K+1, not yet rolled over" predict identical phases
--- for every day. That is not a bug, it is the limit of the information available -
--- you cannot tell the two apart without a reading from the other side of the
--- moon's phase hour. Two candidates is therefore the normal converged state, and
--- costs at most one day of precision on boundary predictions. It collapses to one
--- as soon as the player is outdoors both before and after moonrise.
 local function calibrationConverged() return calibrationCount() <= 2 end
 local function calibrationExact()     return calibrationCount() == 1 end
 
@@ -189,9 +176,6 @@ local function calibrationExact()     return calibrationCount() == 1 end
 -- Tiers 2-4
 --------------------------------------------------------------------------------
 
--- Tier 2: advance the last confirmed reading by however many 3-day steps have
--- elapsed. Inherits the correct rollover branch from that reading, so it stays
--- exact for as long as the calibration holds.
 local function projectFromAnchor(moonName, day)
 	local a = saveData.anchors[moonName]
 	if not a then return nil end
@@ -207,7 +191,6 @@ local function formulaIndex(day)
 end
 
 -- Tier 4: the recorded observation table, keyed by day since game start.
--- Only gives a 5-bucket value, so direction is inferred from the neighbouring days.
 local function fixtureIndex(moonName, gameDay)
 	local v = C.fixtureValue(moonName, gameDay)
 	if v == nil then return nil end
@@ -289,10 +272,6 @@ local function current()
 		return lastResult
 	end
 	local r = compute()
-	-- Only cache a reading taken with a live cell. During a load self.cell is
-	-- nil, so the result comes from a fallback tier; caching that would keep the
-	-- fallback in place for the rest of the quarter-hour bucket even once the
-	-- cell is back and the engine could answer exactly.
 	if r and self.cell ~= nil then
 		lastResult, lastResultDay, lastResultHour = r, day, hour
 	end
@@ -333,27 +312,21 @@ end
 -- Interface
 --------------------------------------------------------------------------------
 
--- Forward declaration: the methods below call each other, and a local is only in
--- scope *after* its declaring statement finishes.
 local interface
 
 interface = {
 	version = C.VERSION,
 
-	--- All moons: { Masser = info, Secunda = info }, or an empty table.
 	getMoons = function()
 		local r = current()
 		return r and r.moons or {}
 	end,
 
-	--- One moon by name ('Masser' / 'Secunda'), or nil.
 	getMoon = function(moonName)
 		local r = current()
 		return r and r.moons[moonName] or nil
 	end,
 
-	--- Whole days until `moonName` next enters `phaseName` (e.g. 'Full').
-	--- 0 means it is in that phase now. nil if unknown.
 	daysUntil = function(moonName, phaseName)
 		local moon = interface.getMoon(moonName)
 		if not moon then return nil end
@@ -363,12 +336,8 @@ interface = {
 		if steps == 0 then return 0 end
 		local day = currentDayIndex()
 		if day and calibrationConverged() then
-			-- Exact once calibrated, give or take the one-day ambiguity described
-			-- above. getStatus().exact tells you which you are getting.
 			return C.daysUntilIndex(day + calibrationOffset(), target)
 		end
-		-- Uncalibrated: we know the phase but not where inside it we are, so
-		-- assume a whole phase remains. Over-estimates by at most two days.
 		return steps * C.PHASE_LENGTH_DAYS
 	end,
 
@@ -391,8 +360,6 @@ interface = {
 		return a.index == b.index
 	end,
 
-	--- Position in the 24-day cycle (0..23), or nil while uncalibrated.
-	--- May be one out until calibration is exact; see getStatus().exact.
 	getCycleDay = function()
 		local day = currentDayIndex()
 		if not day or not calibrationConverged() then return nil end
@@ -413,7 +380,6 @@ interface = {
 		}
 	end,
 
-	--- Re-run calibration from scratch. Useful after console time travel.
 	resetCalibration = function()
 		saveData.kCandidates = nil
 		saveData.anchors = {}
@@ -425,10 +391,8 @@ interface = {
 	--------------------------------------------------------------------------
 	-- Every eighth day from 27 Last Seed. Independent of the moons, so it works
 	-- indoors and on engine builds with no moon bindings at all.
-	--
 	--   27 Last Seed, 4 Hearthfire, 12, 20, 28, 6 Frostfall, 14, 22, 30 Frostfall
 	--
-	-- Note 27 -> 4 -> 12, not 27 -> 5 -> 13. Last Seed has 31 days.
 
 	--- { active, daysUntil, date = {year, month, day}, dateString, todayString }
 	--- or nil if the calendar is unreadable.
@@ -454,8 +418,6 @@ interface = {
 		return s ~= nil and s.active
 	end,
 
-	--- Override the anchor date or interval, e.g. from settings.
-	--- Pass { ANCHOR_YEAR, ANCHOR_MONTH, ANCHOR_DAY, INTERVAL_DAYS }.
 	setShadeConfig = function(cfg)
 		for k, v in pairs(cfg or {}) do
 			if v ~= nil then shadeConfig[k] = v end
@@ -501,7 +463,6 @@ local function onLoad(data)
 	saveData.lastIndex = saveData.lastIndex or {}
 	lastResult = nil
 	if stopTimer then stopTimer() end
-	-- Poll on game time so it pauses with the game and keeps up during Rest.
 	stopTimer = time.runRepeatedly(checkForChanges, 30 * time.minute, {
 		type = time.GameTime,
 		initialDelay = 0,

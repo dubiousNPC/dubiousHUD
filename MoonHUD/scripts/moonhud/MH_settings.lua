@@ -1,12 +1,6 @@
 ---@omw-context player
 -- MH_settings.lua
 --
--- Settings groups for MoonHUD. Layout, naming and behaviour follow TimeHUD and
--- LocationHUD so the three sit consistently in the settings menu: every setting
--- those two expose is present here, plus a Moons group for this mod's own options.
---
--- Reading convention is theirs too: each setting is mirrored into a global of the
--- same name (FONT_SIZE, HUD_X_POS, ...) so the HUD script can read them directly.
 
 local core    = require('openmw.core')
 local ui      = require('openmw.ui')
@@ -20,32 +14,14 @@ local v2 = util.vector2
 
 MODNAME = MODNAME or 'MoonHUD'
 
--- TimeHUD and LocationHUD ship a "SuperColorPicker2" settings renderer. If you have
--- either installed you can set this to 'SuperColorPicker2' for a colour wheel.
--- Left as 'textLine' so MoonHUD has no dependencies: enter a plain hex string.
---------------------------------------------------------------------------------
--- Renderer selection
---------------------------------------------------------------------------------
--- SuperSettingsRenderers is bundled with this mod, under
--- scripts/SuperSettingsRenderers, and registered by the MENU entries in the
--- .omwscripts file. It is therefore always present and this can stay on.
---
--- Set it to false only if you have stripped the bundled copy out. Naming a
--- renderer that is not registered makes I.Settings.registerGroup fail, which
--- kills the whole script: no settings page and no widget.
 local RENDERER_SELECT = 'SuperSelect3'
 local RENDERER_NUMBER = 'SuperSlider6'
 local RENDERER_COLOR  = 'SuperColorPicker4'
 
--- Kept as names so the whole page can be dropped back to the built-in renderers
--- by editing these three lines, should the bundle ever be stripped out.
 local R_SLIDER = RENDERER_NUMBER
 local R_SELECT = RENDERER_SELECT
 local R_COLOR  = RENDERER_COLOR
 
--- Slider argument in the Sun's Dusk house style: a labelled track with the
--- default marked, the value and reset on a second row. `def` must be the
--- setting's own default or showDefaultMark puts the tick at the minimum.
 local function sliderArg(min, max, step, unit, def, extra)
 	local a = {
 		min = min,
@@ -114,64 +90,7 @@ local key
 --------------------------------------------------------------------------------
 -- Built-in presets
 --------------------------------------------------------------------------------
--- Sparse: only the keys that differ from the shipped defaults. Anything not
--- listed is left alone, so a preset is a nudge rather than a reset. 'Default'
--- is handled separately and does sweep everything.
-BuiltInPresets = {
-	['Minimal'] = {
-		DISPLAY_MODE = 'Icons',
-		LAYOUT = 'Vertical',
-		PANEL_SHAPE = 'None',
-		SHOW_MOON_NAMES = false,
-		SHOW_SHADE = false,
-		ICON_SIZE = 24,
-		BACKGROUND_PRESET = 'None',
-	},
-	['Orrery'] = {
-		DISPLAY_MODE = 'Icons',
-		LAYOUT = 'Triangle',
-		PANEL_SHAPE = 'Circle',
-		CIRCLE_BORDER = true,
-		ATLAS_PRESET = 'moon_atlas_3',
-		BACKGROUND_PRESET = 'panel_bg_stars',
-		ICON_SIZE = 40,
-		SHOW_SHADE = true,
-		SHOW_MOON_NAMES = false,
-	},
-}
 
-
---------------------------------------------------------------------------------
-settingsTemplate.PRESETS = {
-	key = 'Settings' .. MODNAME .. 'PRESETS',
-	page = MODNAME,
-	l10n = 'none',
-	name = 'Presets',
-	permanentStorage = true,
-	order = 0,
-	settings = {
-		{
-			key = 'PRESET',
-			name = 'Preset',
-			description = 'Applies a whole configuration at once.\n'
-				.. 'Default restores every setting on this page.\n'
-				.. 'Slot 1 and Slot 2 are your own, saved below.\n'
-				.. 'Custom does nothing, and is what you are left on after any edit.',
-			default = 'Custom',
-			renderer = R_SELECT,
-			argument = selectArg { 'Custom', 'Default', 'Minimal', 'Orrery', 'Slot 1', 'Slot 2' },
-		},
-		{
-			key = 'PRESET_SAVE',
-			name = 'Save current settings',
-			description = 'Writes every setting on this page into the chosen slot,\n'
-				.. 'then returns to "--". Load it again from Preset above.',
-			default = '--',
-			renderer = R_SELECT,
-			argument = selectArg { '--', 'Save to Slot 1', 'Save to Slot 2' },
-		},
-	},
-}
 
 --------------------------------------------------------------------------------
 key = 'General'
@@ -638,142 +557,6 @@ settingsTemplate[key] = {
 	},
 }
 
---------------------------------------------------------------------------------
--- Registration
-
---------------------------------------------------------------------------------
--- Preset machinery
---------------------------------------------------------------------------------
--- Two user slots plus the built-ins. A slot is a snapshot of every registered
--- setting on this page, kept in its own storage section and written back on
--- demand.
---
--- Saving runs through a select rather than a button on purpose: SuperSelect3's
--- extra buttons send a GLOBAL event, and this mod ships no global script. A
--- select that resets itself needs no second script and no new dependency.
-
-local SLOT_SECTION = 'Settings' .. MODNAME .. 'PresetSlots'
-local SLOT_FOR     = { ['Slot 1'] = 'SLOT1', ['Slot 2'] = 'SLOT2' }
-local SAVE_TO      = { ['Save to Slot 1'] = 'SLOT1', ['Save to Slot 2'] = 'SLOT2' }
-local PRESET_KEYS  = { PRESET = true, PRESET_SAVE = true }
-
--- key -> { section, default }, so a preset can reach any setting on the page.
-local settingIndex = {}
-
--- Set while a preset is writing, so the subscribe handler below does not treat
--- each write as a fresh user edit and knock the selector back to Custom.
-local applyingPreset = false
-
--- util.color is userdata and does not survive being nested in a stored table,
--- so colours go in and out of a slot as a tagged hex string. The bundled colour
--- picker does the same thing internally with its history.
-local function toStorable(v)
-	-- Detected by the method, not by type(). util.color is userdata in game, but
-	-- anything standing in for it only has to answer asHex.
-	local t = type(v)
-	if (t == 'userdata' or t == 'table') and type(v.asHex) == 'function' then
-		return '#hex:' .. v:asHex()
-	end
-	return v
-end
-
-local function fromStorable(v)
-	if type(v) == 'string' then
-		local h = v:match('^#hex:(%x%x%x%x%x%x)$')
-		if h then return util.color.hex(h) end
-	end
-	return v
-end
-
-local function writeValues(values)
-	if type(values) ~= 'table' then return false end
-	local wrote = 0
-	applyingPreset = true
-	for k, v in pairs(values) do
-		local d = settingIndex[k]
-		if d and not PRESET_KEYS[k] then
-			storage.playerSection(d.section):set(k, fromStorable(v))
-			wrote = wrote + 1
-		end
-	end
-	applyingPreset = false
-	return wrote > 0
-end
-
-local function resetToDefaults()
-	local values = {}
-	for k, d in pairs(settingIndex) do
-		if not PRESET_KEYS[k] then values[k] = d.default end
-	end
-	return writeValues(values)
-end
-
-local function saveSlot(slotKey)
-	local snap = {}
-	for k, d in pairs(settingIndex) do
-		if not PRESET_KEYS[k] then
-			local v = storage.playerSection(d.section):get(k)
-			if v == nil then v = d.default end
-			snap[k] = toStorable(v)
-		end
-	end
-	storage.playerSection(SLOT_SECTION):set(slotKey, snap)
-	return snap
-end
-
-local function loadSlot(slotKey)
-	return writeValues(storage.playerSection(SLOT_SECTION):get(slotKey))
-end
-
---- Puts the save selector back to '--' on the next tick.
---- Deferred rather than immediate: see the note in handlePresetSetting. If the
---- timer API is not there the selector simply stays where the user left it,
---- which costs one extra click to save to the same slot twice and is a great
---- deal better than throwing.
-local function resetSaveSelector()
-	if not (async and async.newUnsavableSimulationTimer) then return end
-	async:newUnsavableSimulationTimer(0, function()
-		applyingPreset = true
-		storage.playerSection(settingsTemplate.PRESETS.key):set('PRESET_SAVE', '--')
-		applyingPreset = false
-	end)
-end
-
---- Returns true if the setting was a preset control and has been dealt with.
-local function handlePresetSetting(setting)
-	if not PRESET_KEYS[setting] then return false end
-	if applyingPreset then return true end
-	local section = storage.playerSection(settingsTemplate.PRESETS.key)
-
-	if setting == 'PRESET' then
-		local choice = section:get('PRESET')
-		if choice == nil or choice == 'Custom' then return true end
-		if choice == 'Default' then
-			resetToDefaults()
-		elseif SLOT_FOR[choice] then
-			loadSlot(SLOT_FOR[choice])
-		elseif BuiltInPresets[choice] then
-			writeValues(BuiltInPresets[choice])
-		end
-		return true
-	end
-
-	-- PRESET_SAVE: act, then put the selector back so the same slot can be
-	-- written twice in a row.
-	--
-	-- That reset CANNOT happen here. The engine refuses a write to a section
-	-- from inside that section's own handler -- "Storage handler shouldn't
-	-- change the storage section it handles (leads to an infinite recursion)"
-	-- -- and this handler is subscribed to the very section the selector lives
-	-- in. So the write is pushed to the next simulation tick, outside the
-	-- callback, where it is an ordinary write like any other.
-	local slot = SAVE_TO[section:get('PRESET_SAVE') or '']
-	if slot then
-		saveSlot(slot)
-		resetSaveSelector()
-	end
-	return true
-end
 
 --------------------------------------------------------------------------------
 
@@ -795,21 +578,13 @@ I.Settings.registerPage {
 -- Mirror into globals, and react to changes
 --------------------------------------------------------------------------------
 
--- Colours are stored as hex strings under the textLine renderer and as real
--- colour objects under SuperColorPicker2. Normalise on read.
 local COLOR_KEYS = { TEXT_COLOR = true, HUD_BORDER_COLOR = true, BACKGROUND_TINT = true, CIRCLE_BORDER_COLOR = true }
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
-		-- Validated by pattern rather than caught with pcall. util.color.hex
-		-- raises on anything that is not six hex digits, and this is genuinely
-		-- untrusted -- it is whatever was typed into a text field. But a pcall
-		-- here would also swallow a real fault in util.color, so the input is
-		-- checked directly and the call is left to raise if it ever should.
 		local hex = v:gsub('^#', '')
 		if hex:match('^%x%x%x%x%x%x$') then
 			return util.color.hex(hex)
 		end
-		-- Three-digit shorthand, since the settings text says "hex, no #".
 		local short = hex:match('^(%x%x%x)$')
 		if short then
 			return util.color.hex(short:gsub('(%x)', '%1%1'))
@@ -826,7 +601,6 @@ local function readAllSettings()
 			local val = section:get(entry.key)
 			if val == nil then val = entry.default end
 			_G[entry.key] = normalise(entry.key, val)
-			settingIndex[entry.key] = { section = template.key, default = entry.default }
 		end
 	end
 end
@@ -836,8 +610,6 @@ readAllSettings()
 for _, template in pairs(settingsTemplate) do
 	local section = storage.playerSection(template.key)
 	section:subscribe(async:callback(function(_, setting)
-		if setting ~= nil and handlePresetSetting(setting) then return end
-
 		if setting == nil then
 			readAllSettings()
 		else

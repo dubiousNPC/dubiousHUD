@@ -2,37 +2,6 @@
 --------------------------------------------------------------------------------
 -- DBSVials -- dbsHUD
 --------------------------------------------------------------------------------
--- Health and stamina as glass vials that fill from the bottom; magicka as a
--- column of eight runes whose glow goes out an eighth at a time.
---
--- The vials and the runes are two independent widgets with their own positions,
--- so they can be dragged to opposite corners of the screen if that is what you
--- want. They share the stat-reading pass and the frame styling, nothing else.
---
--- Built after ErnMMUI, which is the reference for reading the player's dynamic
--- stats and for keeping a stats HUD honest about when it actually needs to
--- redraw.
---
---------------------------------------------------------------------------------
--- What this costs per frame
---------------------------------------------------------------------------------
--- onUpdate reads three stats, divides, and quantises. If nothing quantised has
--- moved it returns without touching the UI. It allocates nothing in the common
--- path: no tables, no textures, no vectors beyond the few the engine needs when
--- a value genuinely changed.
---
--- The quantisation is the whole trick. A vial is redrawn only when the fill
--- crosses a whole *row of the tube art*, so there are 140 distinct states
--- however smoothly health regenerates. A rune is redrawn only when it lights or
--- goes out -- eight states, or 16 alpha steps when the partial rune is set to
--- fade. Without that, regenerating fatigue would rebuild the widget every frame
--- for a change nobody can see.
---
--- Every texture is built once at load, including the 140 pre-cut fill heights.
--- Cutting the fill rather than stretching one texture is what keeps the taper at
--- the bottom of the tube the right shape at every level; a stretched texture
--- would squash the whole 139 rows into however many the fill currently occupies.
---
 -- There is no pcall anywhere in this mod. See README.
 --------------------------------------------------------------------------------
 
@@ -46,12 +15,6 @@ local input   = require('openmw.input')
 
 local v2 = util.vector2
 
--- NOT localised: buildVialsHud, applyVialStyle.
--- This mod uses _G as an inter-module bus. DBV_settings.lua is require()d into
--- this same environment and calls those by name, and it writes changed setting
--- values back with `_G[setting] = ...`. Making them local does not error -- the
--- call sites there are guarded with `if fn then` -- it silently turns every
--- settings callback into a no-op, which is worse.
 local refreshUiVisibility, UiModeChanged
 
 MODNAME = 'DBSVials'
@@ -1062,12 +1025,21 @@ return {
 	interface = interface,
 
 	engineHandlers = {
+		-- onInit as well as onLoad. onLoad fires when a save is loaded; onInit
+		-- when the script is first attached, which is what happens on a new
+		-- game. With onLoad alone nothing is built until some other thing
+		-- rebuilds it -- which is why the meters only appeared after touching a
+		-- setting. BSCompass and MoonHUD both bind the pair; this did not.
+		onInit = onLoad,
 		onLoad = onLoad,
 		onUpdate = onUpdate,
-		UiModeChanged = UiModeChanged,
 	},
 
 	eventHandlers = {
+		-- UiModeChanged is an EVENT, not an engine handler. In engineHandlers
+		-- it is simply never called, which silently disabled the whole
+		-- "When to Show" setting.
+		UiModeChanged = UiModeChanged,
 		DBSVialsSetVisible = function(data)
 			if type(data) == 'table' then
 				interface.setVisible(data.show ~= false, data.which)

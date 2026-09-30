@@ -2,22 +2,6 @@
 -- BSC_p.lua  (PLAYER script)
 --
 -- A dial compass driven by a vertical texture atlas.
---
--- PERFORMANCE NOTES, since that was the brief:
---
---   * Every atlas frame is turned into a ui.texture ONCE, at load or when the
---     atlas settings change. ui.texture is never called from onFrame.
---   * onFrame does no table allocation at all. Locals and numbers only.
---   * The element is only :update()d when the heading crosses into a new frame.
---     With 36 frames that is once per 10 degrees of turn, not once per frame.
---   * When the compass is hidden (indoors, HUD off, menu open) onFrame returns
---     after a single boolean test.
---   * The heading itself comes from camera.getYaw(), a scalar read, rather than
---     camera.viewportToWorldVector() which does a matrix transform.
---   * SAMPLE_EVERY gates how often the heading is even read.
---
--- Settings are read from globals rather than storage for the same reason; see
--- BSC_settings.lua.
 
 local ui      = require('openmw.ui')
 local util    = require('openmw.util')
@@ -31,18 +15,6 @@ self    = require('openmw.self')
 local I       = require('openmw.interfaces')
 local v2      = util.vector2
 
--- Forward declarations for this file's PRIVATE helpers, which were
--- implicit globals. Declared up here rather than as `local function` at
--- each definition, because at least one is referenced above its
--- definition line and a local is not in scope before its declaration.
---
--- NOT localised: rebuildTiles, createCompassHud, applyCompassStyle.
--- This mod uses _G as an inter-module bus. BSC_settings.lua is
--- require()d into this same environment and calls those by name, and it
--- writes changed setting values back with `_G[setting] = ...`. Making
--- them local does not error -- the call sites are guarded with
--- `if fn then` -- it silently turns every settings callback into a
--- no-op, which is worse.
 local atlasGeometry, refreshUiVisibility, UiModeChanged
 
 MODNAME = 'BSCompass'
@@ -50,15 +22,6 @@ MODNAME = 'BSCompass'
 --------------------------------------------------------------------------------
 -- Bundled atlases
 --------------------------------------------------------------------------------
--- Each entry carries its own geometry, because these sheets genuinely differ:
--- BSCompasAtlas is a 36-frame vertical strip, the 360-frame versions have to be
--- grids. A 360-frame strip at 88px would be 31680px tall, past the maximum
--- texture size on essentially every GPU, which is why the grid support exists.
---
---   frames  how many rotation steps
---   cols    columns in the sheet; 1 means a vertical strip
---   cell    pixel size of one square frame
---   overlay optional static art the rotating frame is drawn on top of
 local ATLAS_PRESETS = {
 	['BSCompasAtlas'] = {
 		path = 'textures/bscompass/BSCompasAtlas.png',
@@ -67,47 +30,21 @@ local ATLAS_PRESETS = {
 	['BSCompasAtlas_360'] = {
 		path = 'textures/bscompass/BSCompasAtlas_360.png',
 		frames = 360, cols = 30, cell = 88,
-		-- One texture, whole compass. The housing is a single plate reused
-		-- byte-for-byte in all 360 frames, so bezel and glass cannot wobble; only
-		-- the needle moves. Each needle is the nearest hand-drawn original turned
-		-- by at most 5 degrees, so its shading still shifts as it comes round.
-		--
-		-- The plate is the per-pixel mode of the 36 source frames. The needle
-		-- sweeps, so at every pixel the housing is the majority value and the
-		-- needle cancels out. That also settles the source sheet's own wobble:
-		-- its outer silhouette varied between 5770 and 5952 opaque pixels across
-		-- the 36 frames, and the mode picks one outline and holds it.
 	},
 	['BSCompas_Layered_360'] = {
-		-- Same 360 needles, but shipped as bare art over a three-layer stack:
-		-- plate underneath, needle in the middle, glass dome over the front.
-		-- Recomposites to BSCompasAtlas_360 within half a colour step.
 		path = 'textures/bscompass/BSC_Arrow_360.png',
 		frames = 360, cols = 30, cell = 88,
 		backdrop = 'textures/bscompass/BSC_Plate.png',
 		cover    = 'textures/bscompass/BSC_Glass.png',
-		-- All three layers are authored on the same 88x88 canvas, so the needle
-		-- fills the widget and needs no placement figures of its own.
 		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
 		overlayAspect = 1,
 	},
 	['DBS_CompassARROW'] = {
 		path = 'textures/bscompass/DBS_CompassARROWAtlas.png',
 		frames = 360, cols = 30, cell = 64,
-		-- North and south read swapped without this: the sheet starts half a turn
-		-- out relative to the corner art it sits on.
 		headingOffset = 180,
 		backdrop = 'textures/bscompass/DBS_CompassCORNER.png',
-		-- The arrow pivot sits at 51.5%, 49.9% of the corner art, and the frame
-		-- covers a 242px box of its 1785px width. Measured, not guessed.
 		overlayAnchorX = 51.5, overlayAnchorY = 49.9, overlayScale = 13.6,
-		-- Full-canvas layers, drawn at the backdrop rect. They are authored on
-		-- the same 1785x1610 canvas as the corner art, so they need no placement
-		-- figures of their own -- they simply line up.
-		--
-		-- Note the source filenames are inconsistent: NEWS_Nfade and NEWS_Efade
-		-- have no underscore, NEWS_S_fade and NEWS_W_fade do. Mapped explicitly
-		-- rather than derived, so the files can stay as the artist named them.
 		cardinals = {
 			N = 'textures/bscompass/NEWS_N.png',
 			E = 'textures/bscompass/NEWS_E.png',
@@ -118,7 +55,6 @@ local ATLAS_PRESETS = {
 			Sfade = 'textures/bscompass/NEWS_S_fade.png',
 			Wfade = 'textures/bscompass/NEWS_W_fade.png',
 		},
-		-- Named layers nothing turns on by itself. Other mods raise these.
 		overlays = {
 			eyes       = 'textures/bscompass/DBS_CompassEYES.png',
 			dragoneyes = 'textures/bscompass/DBS_CompassDragonEYES.png',
@@ -166,22 +102,11 @@ local DEG_PER_RAD = 180 / math.pi
 --------------------------------------------------------------------------------
 -- Texture paths
 --------------------------------------------------------------------------------
--- ui.texture is called directly, not through pcall. A missing file is not an
--- error: OpenMW logs "Failed to open image: Resource ... not found" and carries
--- on. The only way ui.texture raises is a malformed argument -- a non-string
--- path, or none at all -- which is a bug in this script, and swallowing it would
--- turn a loud, findable failure into a silently blank widget. It would also hide
--- a future change to the binding, which is the opposite of compatibility.
---
--- So the one thing worth checking is checked explicitly, and anything else is
--- allowed to raise.
 local function validPath(path)
 	return type(path) == 'string' and path ~= ''
 end
 
 
--- Resolved geometry for whichever atlas is selected. Custom reads the manual
--- settings; a preset supplies its own so you cannot mismatch frames and columns.
 function atlasGeometry()
 	local preset = ATLAS_PRESETS[ATLAS_PRESET or '']
 	if preset then
@@ -235,17 +160,6 @@ end
 --   arrow     the rotating atlas frame, placed and scaled inside the backdrop
 --   cover     static art drawn OVER the arrow, fills the widget
 --
--- backdrop and cover are the pair that makes a glazed instrument work: the
--- housing reads from underneath, the needle turns inside it, and the glass sits
--- on top catching the light. OVERLAY_LAYER's 'In front' mode lifts the backdrop
--- above the arrow instead, which is the older single-static-layer way of doing
--- the same thing and stays for presets that were built around it.
---
--- Every layer is sized from COMPASS_SIZE. Previously the arrow owned that figure
--- and the backdrop was pinned to it, so a 1785px corner texture could not be made
--- any bigger than the needle. Now COMPASS_SIZE is the width of the whole widget
--- and the inner layers are percentages of it, which is what makes the corner art
--- resizable.
 
 local function layerGeometry()
 	local geo = atlasGeometry()
@@ -271,19 +185,13 @@ local function layerGeometry()
 	return L
 end
 
--- Builds every frame of the sheet up front. This is the whole performance story:
--- pay once here so onFrame never has to allocate.
---
--- Frames are read row-major: index = row * cols + col. A vertical strip is just
--- the cols = 1 case, so one code path covers both.
+
 function rebuildTiles()
 	local geo = atlasGeometry()
 	local cell, cols, count = geo.cell, geo.cols, geo.frames
 
 	tiles = {}
 	if not validPath(geo.path) then
-		-- Nothing to cut. Leave the array empty; the widget draws nothing and the
-		-- reason is visible in the settings rather than buried in a log.
 		tileCount = 0
 		currentTile = -1
 		return
@@ -319,13 +227,6 @@ local function headingDegrees()
 	return deg
 end
 
--- Atlas frame for a heading.
---
--- The needle in BSCompasAtlas.png rotates CLOCKWISE by 10 degrees per frame
--- (measured: frame 0 at -91 degrees, frame 9 at 171, frame 18 at 88, frame 27 at 10).
--- A world-fixed marker has to rotate COUNTER-clockwise on screen as the player
--- turns clockwise, so the frame index has to advance as the heading DECREASES.
--- Hence the subtraction. Verified consistent at all four cardinals.
 --------------------------------------------------------------------------------
 -- Cardinal overlays
 --------------------------------------------------------------------------------
@@ -370,17 +271,6 @@ end
 --------------------------------------------------------------------------------
 -- Atlas frame for a heading.
 --
--- CORRECTED. This used to subtract from the frame count, on the reasoning that a
--- world-fixed marker counter-rotates on screen as you turn. That reasoning is
--- sound but it does not describe these sheets: in game it put east and west the
--- wrong way round, which is the signature of a mirrored mapping. Both bundled
--- atlases advance their frame index in the same sense as the heading, so the
--- plain form is correct and `invert` is the exception.
---
--- The DBS sheet additionally starts half a turn out -- north and south were
--- swapped -- so it carries a 180 degree headingOffset. A mirror about the
--- east-west axis is exactly an inversion plus 180, which is why the two sheets
--- were wrong in two different-looking ways.
 local function tileForHeading(deg)
 	local n = tileCount
 	if n < 1 then return 0 end
@@ -388,7 +278,6 @@ local function tileForHeading(deg)
 	local step = 360 / n
 	local offset = (HEADING_OFFSET or 0) + (geo.headingOffset or 0)
 	local raw = math.floor((deg + offset) / step + 0.5)
-	-- A preset may declare its own handedness; the setting flips whatever it says.
 	local invert = (geo.invert == true)
 	if INVERT_ROTATION then invert = not invert end
 	if not invert then
@@ -401,11 +290,8 @@ end
 -- Style
 --------------------------------------------------------------------------------
 
--- Applied without rebuilding the tree, for settings that only touch props.
 function applyCompassStyle()
 	if not compassHud or not compassImage then return end
-	-- Size is owned by createCompassHud when an overlay is present, because it
-	-- depends on the anchor and scale. Only touch it in the plain case.
 	local L = layerGeometry()
 	compassImage.props.size = v2(L.arrowSize, L.arrowSize)
 	compassImage.props.position = v2(L.arrowX, L.arrowY)
@@ -436,9 +322,6 @@ function createCompassHud()
 	local L = layerGeometry()
 	local geo = L.geo
 
-	-- tileH/tileV must be false or MyGUI draws the texture at its native size and
-	-- repeats it to fill the widget, which looks exactly like the size setting
-	-- being ignored. Atlas sub-rect textures are the usual victims.
 	local function imageLayer(name, tex, w, h, x, y, tint, alpha)
 		return {
 			type = ui.TYPE.Image,
@@ -472,14 +355,9 @@ function createCompassHud()
 			L.faceSize, L.faceSize, L.faceX, L.faceY, FACE_TINT, FACE_ALPHA)
 	end
 
-	-- Top layer. Fills the widget like the backdrop, because a glass dome is
-	-- authored on the same canvas as the housing it sits in.
 	local coverElement = staticLayer('compassCover', geo.cover,
 		L.width, L.height, 0, 0, COVER_TINT, COVER_ALPHA)
 
-	-- Every cardinal and named overlay is built ONCE, hidden, and later toggled
-	-- by visibility and alpha. Creating or destroying elements as they come and
-	-- go would rebuild the tree mid-play; this keeps the update to a props poke.
 	cardinalElements, overlayElements = {}, {}
 
 	local function fullLayer(name, path, tint, alpha)
@@ -570,11 +448,6 @@ function createCompassHud()
 		end),
 	}
 
-	-- With an overlay both layers live in a fixed-size Widget so the frame can be
-	-- positioned absolutely on top of, or underneath, the static art.
-	-- Three layers in one fixed-size Widget: backdrop at the bottom, then the
-	-- static face, then the rotating arrow. Overlay Layer moves the backdrop to
-	-- the top instead, for housings with a glass or bezel that should occlude.
 	local hasExtras = next(cardinalElements) ~= nil or next(overlayElements) ~= nil
 	local body = compassImage
 	if backdropElement or faceElement or coverElement or hasExtras then
@@ -588,11 +461,7 @@ function createCompassHud()
 			if faceElement then stack:add(faceElement) end
 			stack:add(compassImage)
 		end
-		-- The glass goes on last of the static art, so it catches the light over
-		-- a needle that has already been drawn.
 		if coverElement then stack:add(coverElement) end
-		-- Cardinals sit above the arrow so a lit glyph is never hidden by it;
-		-- named overlays sit above everything.
 		for _, el in pairs(cardinalElements) do stack:add(el) end
 		for _, el in pairs(overlayElements) do stack:add(el) end
 		body = {
@@ -636,7 +505,6 @@ local function chargenFinished()
 	return false
 end
 
--- Sets hudActive, which is the only thing onFrame checks in the common case.
 function refreshUiVisibility()
 	if not compassHud then hudActive = false return end
 
@@ -872,8 +740,6 @@ return {
 	},
 	eventHandlers = {
 		UiModeChanged = UiModeChanged,
-		-- Same event ErnCompass and the HUD transparency mods use, so the two
-		-- fade together if you run both.
 		BSCompass_SetOverlay = function(data)
 			if type(data) == 'table' then interface.setOverlay(data.name, data) end
 		end,
