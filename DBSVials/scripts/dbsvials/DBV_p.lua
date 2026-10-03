@@ -62,6 +62,17 @@ local BASE_X, BASE_Y        = 1, 112
 -- clipping the example flasks do not have.
 local GLASS_ROWS            = 125
 
+-- Tube length. glass_tube_lengths.png holds one tube per height from 63 to 139
+-- rows, each bottom-aligned in a 139-row cell, so any frame draws at one rect
+-- and the foot never moves. 139 is bit-identical to glass_tube.png.
+--
+-- Shortening the tube moves everything below it up by the same amount, which is
+-- the single figure D below: the clasp, the bulb and the foot of the liquid all
+-- shift together, so the vessel stays one object.
+local TUBE_LEN_MIN          = 63
+local TUBE_LEN_MAX          = TUBE_H          -- 139
+local TUBE_LEN_SHEET        = 'textures/dbsvials/glass_tube_lengths.png'
+
 -- The transparent clasp is authored on the whole 40x190 canvas rather than on
 -- the 40x67 the other lower pieces share, so it is placed at the origin.
 local CLEAR_CLASP_W         = 40
@@ -82,6 +93,17 @@ local FILL_ROWS             = TUBE_H     -- 139, so a full vial reaches y30
 -- the travel, so every row of it is on screen.
 local FILL_MIN              = 0
 local FILL_MAX              = FILL_ROWS
+
+-- Battlespire Vials: a test tube that drains through a colour ramp rather than
+-- a vessel assembled from parts. One 32-frame atlas per set, 28x82 a frame,
+-- frame 0 full and frame 31 empty, plus an outline that can go over it.
+local ENGY_W, ENGY_H        = 28, 82
+local ENGY_FRAMES           = 32
+local ENGY_SETS = {
+	['ENGY01 (warm)'] = 'textures/dbsvials/ENGY01.png',
+	['ENGY02 (cool)'] = 'textures/dbsvials/ENGY02.png',
+}
+local ENGY_FRAME_PATH       = 'textures/dbsvials/dbs_ENGY_frame.png'
 
 local TEX = {
 	fill    = 'textures/dbsvials/VIAL_FILL.png',
@@ -134,6 +156,28 @@ local RUNE_CONTENT_H        = 292
 local RUNE_CUTS             = { 0, 33, 69, 111, 143, 178, 216, 249, 292 }
 local RUNE_COUNT            = #RUNE_CUTS - 1
 local RUNES_PATH            = 'textures/dbsvials/RUNES_x.png'
+
+-- The xs set, which is the default. Same eight runes, redrawn separated and
+-- ordered on an even grid: 27 x 240, eight cells of exactly 30 rows. No
+-- measuring needed, unlike the classic sheet.
+--
+-- Two layers, and only two: the outline is always drawn, the blue sits on top
+-- of it per rune. KainGameRUNES_xs_empty + KainGameRUNES_xs reproduces
+-- KainGameRUNES_xs_full exactly -- 0 difference -- so a rune empties by losing
+-- its blue and leaving the outline behind, which is the whole idea.
+local XS_W, XS_H            = 27, 240
+local XS_CELL               = 30
+local XS_COUNT_MAX          = 32        -- elements built once; nothing is added later
+local XS_BLUE_PATH          = 'textures/dbsvials/KainGameRUNES_xs.png'
+local XS_EMPTY_PATH         = 'textures/dbsvials/KainGameRUNES_xs_empty.png'
+
+-- Pips: the same eight runes as separate 45x45 images, stacked in the sheet's
+-- order and repeating upward. How many fit before a new column starts, and
+-- which side that column goes, are settings.
+local PIP_SIZE_ART          = 45
+local PIP_COUNT_MAX         = 64        -- elements built once; nothing is added later
+local PIP_PATHS = {}
+for i = 1, 8 do PIP_PATHS[i] = 'textures/dbsvials/kg_rune' .. i .. '.png' end
 local GLOW1_PATH            = 'textures/dbsvials/GLOW_UP1.png'
 local GLOW2_PATH            = 'textures/dbsvials/GLOW_UP2.png'
 local FLAIR_PATH            = 'textures/dbsvials/FLAIR.png'
@@ -179,11 +223,14 @@ local vialsBackground, runesBackground
 local parts = {
 	health  = {},
 	stamina = {},
-	magicka = { flair = {}, glow2 = {}, glow1 = {} },
+	magicka = { flair = {}, glow2 = {}, glow1 = {}, xs = {}, pips = {}, xsOutline = {} },
 }
 
 local fillTex   = {}        -- [rows] -> texture showing the bottom `rows` of the tube
 local glow1Tex, glow2Tex, flairTex = {}, {}, {}
+local xsBlueTex, xsEmptyTex, pipTex = {}, {}, {}
+local engyTex, engyFrameTex = {}, {}
+local tubeLenTex
 local runeTex, glassTex, claspTex, capTex, residueTex, bulbTex, clearClaspTex
 
 local lastHealthRows  = -1
@@ -214,6 +261,21 @@ local function maybeTexture(path)
 	return ui.texture { path = path }
 end
 
+--- Tube length in art rows, and D: how far everything below the tube moves up.
+--- Every figure under the tube -- clasp, bulb, the foot of the liquid, the
+--- assembly height -- is its full-length value minus D, so one number shortens
+--- the whole vessel and nothing drifts out of register.
+local function tubeLength()
+	local L = math.floor(VIAL_LENGTH or TUBE_LEN_MAX)
+	if L < TUBE_LEN_MIN then L = TUBE_LEN_MIN end
+	if L > TUBE_LEN_MAX then L = TUBE_LEN_MAX end
+	return L, TUBE_LEN_MAX - L
+end
+
+local function battlespire()
+	return (VIAL_STYLE or 'Classic') == 'Battlespire'
+end
+
 local function buildTextures()
 	-- One texture per possible fill height, cut from the bottom of the tube art
 	-- so the taper stays the right shape. 140 of them, built once.
@@ -226,16 +288,46 @@ local function buildTextures()
 		}
 	end
 
-	-- Cut to the rows that are actually drawn. Handing the widget the whole
-	-- 139-row texture in a 125-row rect would squash it instead of ending it.
-	glassTex = nil
-	if validPath(GLASS_TEXTURE) then
+	-- The tube, cut from the length sheet. The frame for length L starts
+	-- L - TUBE_LEN_MIN cells down, and the tube occupies the bottom L rows of
+	-- its 139-row cell, so the drawn part starts D rows into that cell.
+	--
+	-- Cut, not squashed: handing the widget a 139-row texture in a shorter rect
+	-- would compress the whole tube instead of ending it.
+	local L, D = tubeLength()
+	local drawn = math.max(1, GLASS_ROWS - D)
+	-- The length sheet is the source unless the setting names some OTHER file.
+	-- The default path is glass_tube.png, whose art is the sheet's last frame,
+	-- so it has to count as "use the sheet" -- otherwise the length setting
+	-- silently does nothing, which is exactly what it did until this check.
+	local custom = validPath(GLASS_TEXTURE)
+		and GLASS_TEXTURE ~= TUBE_LEN_SHEET
+		and GLASS_TEXTURE ~= TEX.glass
+	if custom then
+		-- A custom path overrides the sheet and is taken from its own top.
 		glassTex = ui.texture {
-			path   = GLASS_TEXTURE,
-			offset = v2(0, 0),
-			size   = v2(TUBE_W, GLASS_ROWS),
+			path = GLASS_TEXTURE, offset = v2(0, 0), size = v2(TUBE_W, drawn),
+		}
+	else
+		glassTex = ui.texture {
+			path   = TUBE_LEN_SHEET,
+			offset = v2(0, (L - TUBE_LEN_MIN) * TUBE_H + D),
+			size   = v2(TUBE_W, drawn),
 		}
 	end
+
+	-- Battlespire: one cut per frame of the drain, and the same for the outline.
+	engyTex, engyFrameTex = {}, {}
+	local engyPath = ENGY_SETS[ENGY_SET or ''] or ENGY_SETS['ENGY01 (warm)']
+	for i = 0, ENGY_FRAMES - 1 do
+		engyTex[i] = ui.texture {
+			path = engyPath, offset = v2(0, i * ENGY_H), size = v2(ENGY_W, ENGY_H),
+		}
+		engyFrameTex[i] = ui.texture {
+			path = ENGY_FRAME_PATH, offset = v2(0, i * ENGY_H), size = v2(ENGY_W, ENGY_H),
+		}
+	end
+
 	clearClaspTex  = maybeTexture(CLEAR_CLASP_TEXTURE)
 	claspTex   = SHOW_CLASP ~= false and maybeTexture(TEX.clasp) or nil
 	capTex     = SHOW_CAP ~= false and maybeTexture(TEX.cap) or nil
@@ -247,6 +339,18 @@ local function buildTextures()
 		offset = v2(0, 0),
 		size   = v2(RUNE_SHEET_W, RUNE_CONTENT_H),
 	}
+	-- Both xs sheets cut into their eight even cells. The outline used to be
+	-- drawn as one whole image, which was fine while the column was always
+	-- eight runes long -- it cannot repeat, so a longer column needs it cut.
+	xsBlueTex, xsEmptyTex = {}, {}
+	for i = 1, RUNE_COUNT do
+		local off, sz = v2(0, (i - 1) * XS_CELL), v2(XS_W, XS_CELL)
+		xsBlueTex[i]  = ui.texture { path = XS_BLUE_PATH,  offset = off, size = sz }
+		xsEmptyTex[i] = ui.texture { path = XS_EMPTY_PATH, offset = off, size = sz }
+	end
+	pipTex = {}
+	for i = 1, 8 do pipTex[i] = ui.texture { path = PIP_PATHS[i] } end
+
 	-- One slice per rune per sheet. The front runes stay whole: they are always
 	-- fully drawn, so there is nothing to switch and no reason to cut them.
 	glow1Tex, glow2Tex, flairTex = {}, {}, {}
@@ -272,10 +376,26 @@ end
 -- holds anything at all, which is what "goes out when its eighth is spent and
 -- comes back the moment it starts to refill" means: the boundary is at any
 -- fill, not at half or full.
-local function runeState(frac)
+--- How many runes the xs column is drawn with. The Classic sheet cannot vary --
+--- its eight are measured bands of one specific image -- but the xs sheet is an
+--- even grid, so the eight shapes can repeat to make a longer column, the same
+--- way the pips repeat.
+---
+--- This changes what a rune MEANS, which the vial's length does not: a rune is
+--- one Nth of magicka, so a longer column is a finer readout, not just a taller
+--- one. Multiples of eight keep the pattern whole.
+local function xsCount()
+	local n = math.floor(RUNE_LENGTH or RUNE_COUNT)
+	if n < 1 then n = 1 end
+	if n > XS_COUNT_MAX then n = XS_COUNT_MAX end
+	return n
+end
+
+local function runeState(frac, n)
+	n = n or RUNE_COUNT
 	if frac <= 0 then return 0, 0 end
-	if frac >= 1 then return RUNE_COUNT, ALPHA_STEPS end
-	local scaled  = frac * RUNE_COUNT
+	if frac >= 1 then return n, ALPHA_STEPS end
+	local scaled  = frac * n
 	local whole   = math.floor(scaled)
 	local partial = scaled - whole
 	if partial > 0 then
@@ -286,14 +406,40 @@ end
 
 --- Maps a rune's position in the column (1 = top of the art) to its place in
 --- the fill order. Filling from the bottom means the last rune lights first.
-local function runeSlotFor(index)
+local function runeSlotFor(index, n)
+	n = n or RUNE_COUNT
 	if RUNE_FILL_FROM == 'Top' then return index end
-	return RUNE_COUNT + 1 - index
+	return n + 1 - index
 end
 
---- Fill height in tube rows for a 0..1 fraction.
+--- How many pips to show, and what one pip is worth.
+--- MMUI counts castings of the selected spell, so the row shortens as a spell
+--- gets dearer; with nothing selected there is nothing to count, so it falls
+--- back to a flat amount of magicka rather than showing an empty row.
+local function pipsFor(mCur)
+	local per = math.max(1, math.floor(PIP_MAGICKA or 10))
+	if (PIP_SOURCE or 'One casting of the selected spell')
+			== 'One casting of the selected spell' then
+		local getSpell = types.Actor.getSelectedSpell
+		local spell = getSpell and getSpell(self_) or nil
+		local cost = spell and spell.cost or nil
+		if type(cost) == 'number' and cost >= 1 then per = math.floor(cost) end
+	end
+	local n = math.floor(mCur / per)
+	if n < 0 then n = 0 end
+	if n > PIP_COUNT_MAX then n = PIP_COUNT_MAX end
+	return n, per
+end
+
+local function runeStyle()
+	return RUNE_STYLE or 'Runes'
+end
+
+--- Fill height in tube rows for a 0..1 fraction. A shorter tube has a shorter
+--- travel, so the liquid still reaches the collar at full and the foot at empty.
 local function fillRowsFor(frac)
-	return math.floor(FILL_MIN + frac * (FILL_MAX - FILL_MIN) + 0.5)
+	local _, D = tubeLength()
+	return math.floor(FILL_MIN + frac * (FILL_MAX - D - FILL_MIN) + 0.5)
 end
 
 --------------------------------------------------------------------------------
@@ -303,8 +449,16 @@ end
 --- Scale factor and pixel size of one vial assembly.
 local function vialMetrics()
 	local size = math.max(24, math.floor(VIAL_SIZE or NATURAL_H))
-	local k = size / NATURAL_H
-	return k, math.max(1, math.floor(NATURAL_W * k)), size
+	if battlespire() then
+		-- A plain 28x82 tube, so the size setting is its height and the width
+		-- follows the art. Nothing shifts, so D is zero.
+		local k = size / ENGY_H
+		return k, math.max(1, math.floor(ENGY_W * k)), size, 0
+	end
+	local _, D = tubeLength()
+	local natural = NATURAL_H - D
+	local k = size / natural
+	return k, math.max(1, math.floor(NATURAL_W * k)), size, D
 end
 
 local function runeMetrics()
@@ -356,9 +510,38 @@ end
 --- Everything is placed from the measured art figures and scaled by one factor,
 --- so the fittings keep their proportions at any size.
 local function buildVial(key, colour)
-	local k, w, h = vialMetrics()
+	local k, w, h, D = vialMetrics()
 	local p = parts[key]
 	local stack = ui.content {}
+
+	-- Battlespire: no assembly. One frame of a drain atlas, optionally with its
+	-- outline over it. The liquid's colour comes from the art, which is the
+	-- point of the set -- it ramps as it empties -- so the colour setting does
+	-- not apply here.
+	if battlespire() then
+		p.engy = pixelImage('engy' .. key, engyTex[0], 0, 0, w, h, VIAL_TINT, 1)
+		stack:add(p.engy)
+		if ENGY_SHOW_FRAME then
+			p.engyFrame = pixelImage('engyframe' .. key, engyFrameTex[0], 0, 0, w, h,
+				FITTING_TINT, ENGY_FRAME_ALPHA or 1)
+			stack:add(p.engyFrame)
+		end
+		local body = {
+			type = ui.TYPE.Widget,
+			name = key .. 'Vial',
+			props = { size = v2(w, h) },
+			content = stack,
+		}
+		if not SHOW_NUMBERS then p.text = nil; return body end
+		local ts = math.max(8, math.floor(NUMBER_SIZE or 13))
+		p.text = textLayout(key .. 'Num', ts, NUMBER_COLOR, math.max(w, ts * 5))
+		return {
+			type = ui.TYPE.Flex,
+			name = key .. 'Group',
+			props = { horizontal = false, align = ui.ALIGNMENT.Center, autoSize = true },
+			content = ui.content { body, p.text },
+		}
+	end
 
 	local function place(name, tex, ax, ay, aw, ah, tint, alpha)
 		if not tex then return nil end
@@ -372,26 +555,28 @@ local function buildVial(key, colour)
 	-- what the supplied examples show.
 	-- Lowest: the metal. It used to sit on top, which put it in front of the
 	-- liquid; the example flasks show the liquid crossing it, so it goes under.
-	p.clasp = place('clasp' .. key, claspTex, BASE_X, BASE_Y, BASE_W, BASE_H,
+	p.clasp = place('clasp' .. key, claspTex, BASE_X, BASE_Y - D, BASE_W, BASE_H,
 		FITTING_TINT, 1)
 
 	-- The bulb's back, so it is not hollow above the liquid line.
-	p.bulb = place('bulb' .. key, bulbTex, BASE_X, BASE_Y, BASE_W, BASE_H,
+	p.bulb = place('bulb' .. key, bulbTex, BASE_X, BASE_Y - D, BASE_W, BASE_H,
 		BULB_TINT, BULB_ALPHA or 1)
-	p.residue = place('residue' .. key, residueTex, BASE_X, BASE_Y, BASE_W, BASE_H,
+	p.residue = place('residue' .. key, residueTex, BASE_X, BASE_Y - D, BASE_W, BASE_H,
 		colour, RESIDUE_ALPHA or 1)
 
 	-- The liquid. Position and size are set every time the level changes, so the
 	-- figures here are only the starting state.
 	local rows = FILL_MIN
 	p.fill = place('fill' .. key, fillTex[rows],
-		FILL_X, FILL_BOTTOM - rows, TUBE_W, math.max(1, rows), colour, 1)
+		FILL_X, FILL_BOTTOM - D - rows, TUBE_W, math.max(1, rows), colour, 1)
 
 	-- Top: the vessel's front glass, then the tube's, then the collar.
-	p.clearClasp = place('clear' .. key, clearClaspTex, 0, 0,
+	-- The transparent clasp is authored on the full-length canvas, so it is
+	-- drawn shifted up with everything else rather than rescaled.
+	p.clearClasp = place('clear' .. key, clearClaspTex, 0, -D,
 		CLEAR_CLASP_W, CLEAR_CLASP_H, GLASS_TINT, 1)
 	p.glass = place('glass' .. key, glassTex,
-		GLASS_X, GLASS_Y, TUBE_W, GLASS_ROWS, GLASS_TINT, 1)
+		GLASS_X, GLASS_Y, TUBE_W, GLASS_ROWS - D, GLASS_TINT, 1)
 	p.cap = place('cap' .. key, capTex, CAP_X, CAP_Y, CAP_W, CAP_H, FITTING_TINT, 1)
 
 	local body = {
@@ -420,8 +605,101 @@ end
 local function buildRunes()
 	local w, h = runeMetrics()
 	local p = parts.magicka
-	p.flair, p.glow2, p.glow1 = {}, {}, {}
+	p.flair, p.glow2, p.glow1, p.xs, p.pips, p.xsOutline = {}, {}, {}, {}, {}, {}
 	local stack = ui.content {}
+
+	-- Pips: one rune per casting, stacking upward and starting a new column
+	-- once the set length is reached. Every element is built here and hidden;
+	-- counting up and down is a visibility flag, never a tree edit.
+	if runeStyle() == 'Pips' then
+		local size = math.max(6, math.floor(PIP_SIZE or 22))
+		local gap  = math.floor(PIP_GAP or -4)
+		local perCol = math.max(1, math.floor(PIP_COLUMN or 8))
+		local step = math.max(1, size + gap)
+		local cols = math.ceil(PIP_COUNT_MAX / perCol)
+		local leftward = (PIP_WRAP or 'Right') == 'Left'
+		local cw = cols * step
+		local ch = perCol * step
+		for i = 1, PIP_COUNT_MAX do
+			local c = math.floor((i - 1) / perCol)
+			local r = (i - 1) % perCol
+			-- Columns are laid out for the maximum, so the main column stays put
+			-- and later ones grow to the chosen side without anything moving.
+			local cx = leftward and (cols - 1 - c) or c
+			local el = pixelImage('pip' .. i, pipTex[((i - 1) % 8) + 1],
+				cx * step, (perCol - 1 - r) * step, size, size,
+				RUNE_TINT, RUNE_BASE_ALPHA or 1)
+			el.props.visible = false
+			p.pips[i] = el
+			stack:add(el)
+		end
+		local body = {
+			type = ui.TYPE.Widget,
+			name = 'runeColumn',
+			props = { size = v2(cw, ch) },
+			content = stack,
+		}
+		if not SHOW_NUMBERS then p.text = nil; return body end
+		local ts = math.max(8, math.floor(NUMBER_SIZE or 13))
+		p.text = textLayout('magickaNum', ts, NUMBER_COLOR, math.max(cw, ts * 5))
+		return {
+			type = ui.TYPE.Flex,
+			name = 'magickaGroup',
+			props = { horizontal = false, align = ui.ALIGNMENT.Center, autoSize = true },
+			content = ui.content { body, p.text },
+		}
+	end
+
+	-- The xs set: the outlines underneath, one per rune, and the blue over them
+	-- one rune at a time. An even 30-row grid, so the cells need no measuring.
+	if runeStyle() == 'Runes' then
+		-- A rune keeps the height it has at eight, so a longer column is a
+		-- longer column rather than the same one subdivided smaller. That is
+		-- what makes this the same gesture as the vial's length.
+		local n = xsCount()
+		-- A rune keeps the height it has at eight, so the column is extended by
+		-- gaining runes rather than by subdividing the same space smaller.
+		-- Rune Height stays the height of eight of them, which is what makes
+		-- the default pixel-identical to a fixed eight.
+		local cellF = h / RUNE_COUNT
+		local edge  = {}
+		for i = 0, n do edge[i] = math.floor(i * cellF) end
+		local colH = edge[n]
+		for i = 1, n do
+			-- The eight shapes repeat, as the pips do.
+			local shape = ((i - 1) % RUNE_COUNT) + 1
+			local el = pixelImage('runeOutline' .. i, xsEmptyTex[shape],
+				0, edge[i - 1], w, edge[i] - edge[i - 1],
+				RUNE_TINT, RUNE_BASE_ALPHA or 1)
+			p.xsOutline[i] = el
+			stack:add(el)
+		end
+		for i = 1, n do
+			local shape = ((i - 1) % RUNE_COUNT) + 1
+			local el = pixelImage('xs' .. i, xsBlueTex[shape],
+				0, edge[i - 1], w, edge[i] - edge[i - 1],
+				GLOW_TINT, GLOW_ALPHA or 1)
+			el.props.visible = false
+			p.xs[i] = el
+			stack:add(el)
+		end
+		p.base = p.xsOutline[1]
+		local body = {
+			type = ui.TYPE.Widget,
+			name = 'runeColumn',
+			props = { size = v2(w, colH) },
+			content = stack,
+		}
+		if not SHOW_NUMBERS then p.text = nil; return body end
+		local ts = math.max(8, math.floor(NUMBER_SIZE or 13))
+		p.text = textLayout('magickaNum', ts, NUMBER_COLOR, math.max(w, ts * 5))
+		return {
+			type = ui.TYPE.Flex,
+			name = 'magickaGroup',
+			props = { horizontal = false, align = ui.ALIGNMENT.Center, autoSize = true },
+			content = ui.content { body, p.text },
+		}
+	end
 
 	-- Both edges are rounded first and the height taken as their difference.
 	-- Rounding the position and the height separately lets them disagree by a
@@ -581,7 +859,7 @@ function buildVialsHud()
 	vialsHud, runesHud = nil, nil
 	vialsBackground, runesBackground = nil, nil
 	parts.health, parts.stamina = {}, {}
-	parts.magicka = { flair = {}, glow2 = {}, glow1 = {} }
+	parts.magicka = { flair = {}, glow2 = {}, glow1 = {}, xs = {}, pips = {}, xsOutline = {} }
 
 	buildTextures()
 
@@ -656,6 +934,11 @@ function applyVialStyle()
 
 	local function styleVial(key, colour)
 		local p = parts[key]
+		if p.engy then p.engy.props.color = VIAL_TINT end
+		if p.engyFrame then
+			p.engyFrame.props.color = FITTING_TINT
+			p.engyFrame.props.alpha = ENGY_FRAME_ALPHA or 1
+		end
 		if p.fill then p.fill.props.color = colour end
 		if p.residue then
 			p.residue.props.color = colour
@@ -683,6 +966,16 @@ function applyVialStyle()
 		if m.glow1[i] then m.glow1[i].props.color = GLOW_TINT end
 		if m.glow2[i] then m.glow2[i].props.color = GLOW_TINT end
 		if m.flair[i] then m.flair[i].props.color = FLAIR_TINT end
+	end
+	for i = 1, XS_COUNT_MAX do
+		if m.xs[i] then m.xs[i].props.color = GLOW_TINT end
+		if m.xsOutline and m.xsOutline[i] then
+			m.xsOutline[i].props.color = RUNE_TINT
+			m.xsOutline[i].props.alpha = RUNE_BASE_ALPHA or 1
+		end
+	end
+	for i = 1, PIP_COUNT_MAX do
+		if m.pips[i] then m.pips[i].props.color = RUNE_TINT end
 	end
 	if m.text then m.text.props.textColor = NUMBER_COLOR end
 
@@ -758,10 +1051,11 @@ end
 --- match. Both are needed: the texture is the bottom `rows` of the tube art, so
 --- the widget has to be exactly that tall and sit exactly that far up, or the
 --- art is stretched and the taper at the bottom goes wrong.
-local function setVialFill(p, rows, k)
+local function setVialFill(p, rows, k, D)
 	if not p.fill then return end
 	p.fill.props.resource = fillTex[rows]
-	p.fill.props.position = v2(math.floor(FILL_X * k), math.floor((FILL_BOTTOM - rows) * k))
+	p.fill.props.position = v2(math.floor(FILL_X * k),
+		math.floor((FILL_BOTTOM - (D or 0) - rows) * k))
 	p.fill.props.size = v2(math.max(1, math.floor(TUBE_W * k)),
 		math.max(1, math.floor(rows * k)))
 	-- An empty vessel draws no liquid at all, rather than a one-pixel sliver in
@@ -781,27 +1075,48 @@ local function onUpdate(dt)
 	local mFrac = mCur / mMax
 
 	local vialsDirty, runesDirty = false, false
-	local k = vialMetrics()
+	local k, _, _, D = vialMetrics()
 
 	-- --- vials ------------------------------------------------------------
 	-- Quantised to whole rows of the tube art, which is also the index into the
 	-- pre-cut texture array. A change smaller than one row cannot be drawn, so
 	-- there is no reason to notice it.
 	if vialsHud then
-		if SHOW_HEALTH ~= false then
-			local rows = fillRowsFor(hFrac)
-			if rows ~= lastHealthRows then
-				lastHealthRows = rows
-				setVialFill(parts.health, rows, k)
-				vialsDirty = true
+		if battlespire() then
+			-- Quantised to the atlas: 32 states, so the texture is only swapped
+			-- when a different frame would be drawn. Frame 0 is full.
+			local function setEngy(key, frac, last)
+				local f = ENGY_FRAMES - 1 - math.floor(frac * (ENGY_FRAMES - 1) + 0.5)
+				if f == last then return last, false end
+				local p = parts[key]
+				if p.engy then p.engy.props.resource = engyTex[f] end
+				if p.engyFrame then p.engyFrame.props.resource = engyFrameTex[f] end
+				return f, true
 			end
-		end
-		if SHOW_STAMINA ~= false then
-			local rows = fillRowsFor(sFrac)
-			if rows ~= lastStaminaRows then
-				lastStaminaRows = rows
-				setVialFill(parts.stamina, rows, k)
-				vialsDirty = true
+			if SHOW_HEALTH ~= false then
+				local f, ch = setEngy('health', hFrac, lastHealthRows)
+				lastHealthRows = f; vialsDirty = vialsDirty or ch
+			end
+			if SHOW_STAMINA ~= false then
+				local f, ch = setEngy('stamina', sFrac, lastStaminaRows)
+				lastStaminaRows = f; vialsDirty = vialsDirty or ch
+			end
+		else
+			if SHOW_HEALTH ~= false then
+				local rows = fillRowsFor(hFrac)
+				if rows ~= lastHealthRows then
+					lastHealthRows = rows
+					setVialFill(parts.health, rows, k, D)
+					vialsDirty = true
+				end
+			end
+			if SHOW_STAMINA ~= false then
+				local rows = fillRowsFor(sFrac)
+				if rows ~= lastStaminaRows then
+					lastStaminaRows = rows
+					setVialFill(parts.stamina, rows, k, D)
+					vialsDirty = true
+				end
 			end
 		end
 	end
@@ -813,7 +1128,40 @@ local function onUpdate(dt)
 	--   full             GLOW_UP2, the thick one
 	-- Only ever one rune is in the middle state -- the one the current eighth
 	-- is moving through.
-	if runesHud and SHOW_RUNES ~= false then
+	if runesHud and SHOW_RUNES ~= false and runeStyle() == 'Pips' then
+		-- Quantised to the count, so a pip row only changes when a whole pip
+		-- is gained or lost.
+		local n = pipsFor(mCur)
+		if n ~= lastRuneLit then
+			lastRuneLit = n
+			for i = 1, PIP_COUNT_MAX do
+				local el = parts.magicka.pips[i]
+				if el then el.props.visible = i <= n end
+			end
+			runesDirty = true
+		end
+	elseif runesHud and SHOW_RUNES ~= false and runeStyle() == 'Runes' then
+		-- A rune keeps its outline always and loses its blue as its share
+		-- drains. The outlines never change, so only the blue is touched.
+		local n = xsCount()
+		local lit, partial = runeState(mFrac, n)
+		if not GLOW_PARTIAL then partial = ALPHA_STEPS end
+		if lit ~= lastRuneLit or partial ~= lastRunePartial then
+			lastRuneLit, lastRunePartial = lit, partial
+			local fullAlpha = GLOW_ALPHA or 1
+			for i = 1, n do
+				local el = parts.magicka.xs[i]
+				if el then
+					local slot = runeSlotFor(i, n)
+					el.props.visible = slot <= lit
+					el.props.alpha = (slot == lit)
+						and (fullAlpha * partial / ALPHA_STEPS)
+						or fullAlpha
+				end
+			end
+			runesDirty = true
+		end
+	elseif runesHud and SHOW_RUNES ~= false then
 		local lit, partial = runeState(mFrac)
 		if not GLOW_PARTIAL then partial = ALPHA_STEPS end
 		if lit ~= lastRuneLit or partial ~= lastRunePartial then
@@ -862,8 +1210,12 @@ local function onUpdate(dt)
 			end
 			return false
 		end
-		if pulse('health', hFrac, parts.health.fill) then vialsDirty = true end
-		if pulse('stamina', sFrac, parts.stamina.fill) then vialsDirty = true end
+		if pulse('health', hFrac, parts.health.fill or parts.health.engy) then
+			vialsDirty = true
+		end
+		if pulse('stamina', sFrac, parts.stamina.fill or parts.stamina.engy) then
+			vialsDirty = true
+		end
 	end
 
 	-- --- flair ------------------------------------------------------------
@@ -873,7 +1225,7 @@ local function onUpdate(dt)
 	-- another mod asks for through the interface.
 	--
 	-- It shows only under lit runes, so what pulses is what you have left.
-	if runesHud and SHOW_RUNES ~= false then
+	if runesHud and SHOW_RUNES ~= false and runeStyle() == 'Classic' then
 		if flairTimer > 0 then
 			flairTimer = flairTimer - (dt or 0)
 			if flairTimer < 0 then flairTimer = 0 end
@@ -992,8 +1344,13 @@ local interface = {
 	--- How many of the eight runes are currently lit, and the total.
 	getLitRunes = function()
 		local mCur, mMax = statPair(magickaStat)
-		local lit = runeState(mCur / mMax)
-		return lit, RUNE_COUNT
+		if runeStyle() == 'Pips' then
+			local n = pipsFor(mCur)
+			return n, PIP_COUNT_MAX
+		end
+		local n = (runeStyle() == 'Runes') and xsCount() or RUNE_COUNT
+		local lit = runeState(mCur / mMax, n)
+		return lit, n
 	end,
 
 	--- Hide or show. `which` is 'vials', 'runes', or nil for both.

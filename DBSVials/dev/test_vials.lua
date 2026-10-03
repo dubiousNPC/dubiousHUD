@@ -284,6 +284,19 @@ do
 	base = findNode('runeBase')
 end
 
+-- Sections 8 to 13 are the Classic rune sheet, which is no longer the default,
+-- so switch to it first. Everything cached above belongs to the previous tree.
+do
+	local storage = require('openmw.storage')
+	storage.playerSection('SettingsDBSVialsRunes'):set('RUNE_STYLE', 'Classic')
+	rebindRunes()
+	base = findNode('runeBase')
+	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
+	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+	hclear = findNode('clearhealth')
+	vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
+end
+
 print('=== 8. all three rune layers are sliced eight ways ===')
 for i = 1, 8 do
 	check(thin['glowThin' .. i] ~= nil, 'thin halo ' .. i .. ' exists')
@@ -540,6 +553,335 @@ do
 	iface.setVisible(true)
 	check(runeRoot.props.visible ~= false and vialRoot.props.visible ~= false,
 		'showing both brought them back')
+end
+
+print('=== 17. the xs rune set: outline always, blue per rune ===')
+-- The default style. An outline per rune underneath and a blue cell over each,
+-- on an even 30-row grid. A rune empties by losing its blue, which is the whole
+-- reason the set was redrawn. The outlines are cut per cell rather than drawn as
+-- one image so that the column can be lengthened by repeating them.
+do
+	local storage = require('openmw.storage')
+	storage.playerSection('SettingsDBSVialsRunes'):set('RUNE_STYLE', 'Runes')
+	local outlines = collectNodes('runeOutline')
+	local xs = collectNodes('xs')
+	local no = 0
+	for i = 1, 8 do if outlines['runeOutline' .. i] then no = no + 1 end end
+	check(no == 8, 'an outline per rune, got ' .. no)
+	local n = 0
+	for i = 1, 8 do if xs['xs' .. i] then n = n + 1 end end
+	check(n == 8, 'eight blue cells, got ' .. n)
+
+	-- every outline must be BEHIND every blue cell, or a lit rune is outlined
+	-- over: the whole outline layer goes down before any blue starts
+	local col = findNode('runeColumn')
+	local pos = {}
+	for i, ch in ipairs(col.content._items) do pos[ch.name] = i end
+	local lastOutline, firstBlue = 0, math.huge
+	for i = 1, 8 do
+		lastOutline = math.max(lastOutline, pos['runeOutline' .. i] or 0)
+		firstBlue   = math.min(firstBlue, pos['xs' .. i] or math.huge)
+	end
+	check(lastOutline < firstBlue, 'the outline layer is complete before any blue')
+
+	-- cells tile the column with no gap
+	local expect, tiled = 0, true
+	for i = 1, 8 do
+		local pr = xs['xs' .. i].props
+		if pr.position.y ~= expect then tiled = false end
+		expect = pr.position.y + pr.size.y
+	end
+	check(tiled, 'the eight cells are contiguous')
+	check(expect == col.props.size.y,
+		string.format('and cover the column (%d of %d)', expect, col.props.size.y))
+
+	-- each cell is cut from its own 30-row band of the sheet
+	local seen, dup = {}, false
+	for i = 1, 8 do
+		local r = xs['xs' .. i].props.resource
+		local key = tostring(r._offset and r._offset.y)
+		if seen[key] then dup = true end
+		seen[key] = true
+		if r._size and r._size.y ~= 30 then dup = true end
+	end
+	check(not dup, 'each cell is its own 30-row band of the sheet')
+
+	-- and it drains like the others
+	frame(1, 1, 1)
+	local lit = 0
+	for i = 1, 8 do if xs['xs' .. i].props.visible ~= false then lit = lit + 1 end end
+	check(lit == 8, 'full magicka shows all eight blues, got ' .. lit)
+	frame(nil, nil, 0)
+	lit = 0
+	for i = 1, 8 do if xs['xs' .. i].props.visible ~= false then lit = lit + 1 end end
+	check(lit == 0, 'empty magicka shows none, got ' .. lit)
+	local allOut = true
+	for i = 1, 8 do
+		if outlines['runeOutline' .. i].props.visible == false then allOut = false end
+	end
+	check(allOut, 'but every outline is still there when empty')
+	frame(nil, nil, 0.5)
+	lit = 0
+	for i = 1, 8 do if xs['xs' .. i].props.visible ~= false then lit = lit + 1 end end
+	check(lit == 4, 'half magicka shows four, got ' .. lit)
+end
+
+print('=== 18. rune length extends the xs column ===')
+-- The same gesture as the vial's length, but on the runes: the column grows by
+-- gaining runes rather than by subdividing the same space smaller, so a rune
+-- keeps the height it has at eight and the eight shapes repeat upward. What
+-- changes is what a rune MEANS -- one Nth of magicka, so a finer readout.
+do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsRunes')
+	sec:set('RUNE_STYLE', 'Runes')
+	local base = findNode('runeColumn').props.size.y
+	local baseCell = collectNodes('xs').xs1.props.size.y
+
+	for _, n in ipairs { 8, 9, 16, 24, 32 } do
+		sec:set('RUNE_LENGTH', n)
+		local col = findNode('runeColumn')
+		local xs  = collectNodes('xs')
+		local out = collectNodes('runeOutline')
+
+		local built, outBuilt = 0, 0
+		for i = 1, 64 do
+			if xs['xs' .. i] then built = built + 1 end
+			if out['runeOutline' .. i] then outBuilt = outBuilt + 1 end
+		end
+		check(built == n, n .. ' runes build ' .. n .. ' cells, got ' .. built)
+		check(outBuilt == n, 'and ' .. n .. ' outlines, got ' .. outBuilt)
+
+		-- contiguous and covering, at every length -- the same property the
+		-- Classic slices are held to, for the same reason
+		local expect, tiled = 0, true
+		for i = 1, n do
+			local pr = xs['xs' .. i].props
+			if pr.position.y ~= expect then tiled = false end
+			if out['runeOutline' .. i].props.position.y ~= pr.position.y
+				or out['runeOutline' .. i].props.size.y ~= pr.size.y then
+				tiled = false
+			end
+			expect = pr.position.y + pr.size.y
+		end
+		check(tiled, 'the ' .. n .. ' cells are contiguous and their outlines agree')
+		check(expect == col.props.size.y,
+			string.format('and cover the column at %d (%d of %d)',
+				n, expect, col.props.size.y))
+
+		-- a rune does not shrink: Rune Height stays the height of eight
+		check(xs.xs1.props.size.y == baseCell,
+			'a rune keeps its height at ' .. n .. ' (' .. xs.xs1.props.size.y
+				.. ' vs ' .. baseCell .. ')')
+		check(math.abs(col.props.size.y - base * n / 8) <= 1,
+			string.format('the column is %d/8 of its height at %d (%d)',
+				n, n, col.props.size.y))
+
+		-- the eight shapes repeat upward, as the pips do
+		local repeats = true
+		for i = 1, n do
+			local a = xs['xs' .. i].props.resource
+			local b = xs['xs' .. (((i - 1) % 8) + 1)].props.resource
+			if a._offset.y ~= b._offset.y then repeats = false end
+			if out['runeOutline' .. i].props.resource._offset.y ~= b._offset.y then
+				repeats = false
+			end
+		end
+		check(repeats, 'the eight shapes repeat every eight at ' .. n)
+
+		-- and the readout is in Nths now, not eighths
+		local function lit()
+			local c = 0
+			for i = 1, n do
+				if xs['xs' .. i].props.visible ~= false then c = c + 1 end
+			end
+			return c
+		end
+		frame(1, 1, 1)
+		check(lit() == n, 'full magicka lights all ' .. n .. ', got ' .. lit())
+		frame(nil, nil, 0)
+		check(lit() == 0, 'empty lights none at ' .. n .. ', got ' .. lit())
+		frame(nil, nil, 0.5)
+		check(lit() == n / 2 or lit() == math.ceil(n / 2),
+			'half magicka lights half of ' .. n .. ', got ' .. lit())
+		-- one rune's worth: finer column, finer step
+		frame(nil, nil, 0.5 / n)
+		check(lit() == 1, 'one Nth of magicka lights one rune at ' .. n
+			.. ', got ' .. lit())
+	end
+
+	-- the public interface reports the count that is actually drawn
+	sec:set('RUNE_LENGTH', 16)
+	frame(nil, nil, 1)
+	local l, total = MODULE.interface.getLitRunes()
+	check(total == 16, 'getLitRunes reports 16 runes, got ' .. tostring(total))
+	check(l == 16, 'and all of them lit at full magicka, got ' .. tostring(l))
+	sec:set('RUNE_LENGTH', 8)
+end
+
+print('=== 19. pips ===')
+do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsRunes')
+	sec:set('RUNE_STYLE', 'Pips')
+	sec:set('PIP_SOURCE', 'A fixed amount of magicka')
+	sec:set('PIP_MAGICKA', 10)
+	sec:set('PIP_COLUMN', 8)
+	sec:set('PIP_WRAP', 'Right')
+	local pips = collectNodes('pip')
+	local function shown()
+		local n = 0
+		for i = 1, 64 do
+			local e = pips['pip' .. i]
+			if e and e.props.visible ~= false then n = n + 1 end
+		end
+		return n
+	end
+	check(pips.pip1 ~= nil, 'pips are built')
+
+	-- one pip per 10 magicka, out of a 100 maximum
+	frame(1, 1, 1)
+	check(shown() == 10, 'full magicka at 10 per pip shows 10, got ' .. shown())
+	frame(nil, nil, 0.45)
+	check(shown() == 4, '45 magicka shows 4 whole pips, got ' .. shown())
+	frame(nil, nil, 0)
+	check(shown() == 0, 'no magicka shows none, got ' .. shown())
+
+	print('--- pips stack upward and wrap into columns')
+	-- pip 1 is at the bottom of the main column, and each one above it.
+	local y1, y2 = pips.pip1.props.position.y, pips.pip2.props.position.y
+	check(y2 < y1, 'pip 2 sits above pip 1 (' .. y2 .. ' vs ' .. y1 .. ')')
+	check(pips.pip1.props.position.x == pips.pip8.props.position.x,
+		'the first eight share a column')
+	check(pips.pip9.props.position.x ~= pips.pip1.props.position.x,
+		'the ninth starts a new one')
+	check(pips.pip9.props.position.x > pips.pip1.props.position.x,
+		'which is to the RIGHT by default')
+	check(pips.pip9.props.position.y == pips.pip1.props.position.y,
+		'and starts at the bottom again')
+
+	sec:set('PIP_WRAP', 'Left')
+	pips = collectNodes('pip')
+	check(pips.pip9.props.position.x < pips.pip1.props.position.x,
+		'set to Left, the new column goes the other way')
+	check(pips.pip1.props.position.x > 0,
+		'and the main column moves off the left edge to make room')
+
+	sec:set('PIP_COLUMN', 4)
+	pips = collectNodes('pip')
+	check(pips.pip4.props.position.x == pips.pip1.props.position.x and
+	      pips.pip5.props.position.x ~= pips.pip1.props.position.x,
+		'Pips per Column controls where the break falls')
+
+	print('--- the eight shapes repeat')
+	local a = collectNodes('pip')
+	check(a.pip1.props.resource._texture == a.pip9.props.resource._texture,
+		'pip 9 reuses the first shape')
+	check(a.pip1.props.resource._texture ~= a.pip2.props.resource._texture,
+		'but pip 2 is a different one')
+
+	sec:set('RUNE_STYLE', 'Runes')
+	sec:set('PIP_COLUMN', 8)
+	sec:set('PIP_WRAP', 'Right')
+end
+
+print('=== 20. Battlespire vials ===')
+do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsVials')
+	sec:set('VIAL_STYLE', 'Battlespire')
+	local e = findNode('engyhealth')
+	check(e ~= nil, 'the Battlespire tube is drawn')
+	check(findNode('fillhealth') == nil, 'and none of the Classic assembly is')
+	check(findNode('clasphealth') == nil, 'no clasp')
+	check(findNode('caphealth') == nil, 'no collar')
+
+	-- 32 frames, 0 full and 31 empty, and the frame is CUT not stretched
+	local function frameOf()
+		local r = findNode('engyhealth').props.resource
+		return r._offset and (r._offset.y / 82) or nil, r._size and r._size.y
+	end
+	frame(1, 1, 1)
+	local f, h = frameOf()
+	check(f == 0 and h == 82, 'full health is frame 0 of 82 rows, got ' .. tostring(f))
+	frame(0, nil, nil)
+	f = frameOf()
+	check(f == 31, 'empty health is frame 31, got ' .. tostring(f))
+	frame(0.5, nil, nil)
+	f = frameOf()
+	check(f > 10 and f < 21, 'half health lands mid-ramp, got frame ' .. tostring(f))
+
+	-- monotonic: draining never makes the frame go backwards
+	local prev = -1
+	local ok = true
+	for i = 20, 0, -1 do
+		frame(i / 20, nil, nil)
+		local g = frameOf()
+		if g < prev then ok = false end
+		prev = g
+	end
+	check(ok, 'the frame index rises steadily as the tube drains')
+
+	-- the optional outline
+	check(findNode('engyframehealth') == nil, 'the frame is off by default')
+	sec:set('ENGY_SHOW_FRAME', true)
+	check(findNode('engyframehealth') ~= nil, 'switching it on adds it')
+	do
+		local col = findNode('healthVial')
+		local pos = {}
+		for i, ch in ipairs(col.content._items) do pos[ch.name] = i end
+		check(pos.engyframehealth > pos.engyhealth, 'and it is drawn over the tube')
+	end
+	sec:set('ENGY_SHOW_FRAME', false)
+	sec:set('VIAL_STYLE', 'Classic')
+	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
+	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+	hclear = findNode('clearhealth')
+	vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
+end
+
+print('=== 21. vial length ===')
+-- Shortening the tube has to move everything below it by the same amount, or
+-- the clasp detaches from the tube and the liquid stops reaching the foot.
+do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsVials')
+	local function geom()
+		local g, c, f = findNode('glasshealth'), findNode('clasphealth'), findNode('fillhealth')
+		return g, c, f
+	end
+	local prevGap
+	for _, L in ipairs { 139, 120, 100, 80, 63 } do
+		sec:set('VIAL_LENGTH', L)
+		local g, c, f = geom()
+		check(g ~= nil and c ~= nil and f ~= nil, 'the vial still builds at length ' .. L)
+		-- the tube is cut from the length sheet at the frame for L
+		local r = g.props.resource
+		check(r._offset ~= nil, 'the tube is cut, not whole, at ' .. L)
+		-- The clasp has to stay the same distance from the tube's end. Measured
+		-- in ART rows, not drawn pixels: a shorter vial at the same Vial Size is
+		-- drawn at a larger scale, so every drawn distance grows with it.
+		local v = findNode('healthVial')
+		local k = v.props.size.y / (190 - (139 - L))
+		local gap = (c.props.position.y - (g.props.position.y + g.props.size.y)) / k
+		if prevGap then
+			check(math.abs(gap - prevGap) <= 1.5,
+				string.format('the clasp stays with the tube at %d (%.1f art rows vs %.1f)',
+					L, gap, prevGap))
+		end
+		prevGap = gap
+		-- a full vial still fills to the top of the tube
+		frame(1, nil, nil)
+		check(f.props.size.y > 0, 'a full vial has liquid at length ' .. L)
+	end
+	sec:set('VIAL_LENGTH', 139)
+	do
+		local g = findNode('glasshealth')
+		local r = g.props.resource
+		check(r._offset.y == (139 - 63) * 139, 'full length reads the last frame of the sheet')
+	end
+	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
+	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
 end
 
 print('')

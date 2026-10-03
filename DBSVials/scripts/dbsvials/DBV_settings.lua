@@ -121,10 +121,12 @@ settingsTemplate.GENERAL = {
 		{
 			key = 'SPACING',
 			name = 'Vial Spacing',
-			description = 'Gap between the two vials.',
+			description = 'Gap between the two vials. The range reaches a full screen\n'
+				.. 'width, so they can be pushed to opposite corners while still\n'
+				.. 'being one draggable widget.',
 			renderer = R_SLIDER,
 			default = 10,
-			argument = sliderArg(0, 64, 1, 'px', 10),
+			argument = sliderArg(0, math.max(640, math.floor(hudLayerSize.x)), 1, 'px', 10),
 		},
 		{
 			key = 'SHOW_HEALTH',
@@ -182,6 +184,17 @@ settingsTemplate.VIALS = {
 				math.max(40, math.floor(hudLayerSize.y) - 260)),
 		},
 		{
+			key = 'VIAL_STYLE',
+			name = 'Vial Style',
+			description = 'Classic is the assembled vessel: collar, tube, clasp and bulb,\n'
+				.. 'with the liquid tinted by the colours below.\n'
+				.. 'Battlespire is a plain test tube that drains through a colour\n'
+				.. 'ramp of its own, so the colour settings do not apply to it.',
+			renderer = R_SELECT,
+			default = 'Classic',
+			argument = selectArg { 'Classic', 'Battlespire' },
+		},
+		{
 			key = 'VIAL_SIZE',
 			name = 'Vial Size',
 			description = 'Overall height of the whole assembly -- collar, tube, clasp and\n'
@@ -190,6 +203,51 @@ settingsTemplate.VIALS = {
 			renderer = R_SLIDER,
 			default = 190,
 			argument = sliderArg(24, 600, 1, 'px', 190),
+		},
+		{
+			key = 'VIAL_LENGTH',
+			name = 'Vial Length (Classic)',
+			description = 'How much of the tube is drawn, in rows of the original art.\n'
+				.. '139 is the full vial; 63 is the short one. The clasp, the bulb\n'
+				.. 'and the foot of the liquid all move up together, so the vessel\n'
+				.. 'stays one object and the liquid still fills it end to end.',
+			renderer = R_SLIDER,
+			default = 139,
+			argument = sliderArg(63, 139, 1, 'px', 139),
+		},
+		{
+			key = 'ENGY_SET',
+			name = 'Battlespire Set',
+			description = 'Which colour ramp the Battlespire tubes drain through.\n'
+				.. 'Warm runs green to red, cool runs blue to red.',
+			renderer = R_SELECT,
+			default = 'ENGY01 (warm)',
+			argument = selectArg { 'ENGY01 (warm)', 'ENGY02 (cool)' },
+		},
+		{
+			key = 'ENGY_SHOW_FRAME',
+			name = 'Battlespire Frame',
+			description = 'Draws dbs_ENGY_frame over the tube -- an outline that helps it\n'
+				.. 'read against a bright background.',
+			renderer = 'checkbox',
+			default = false,
+		},
+		{
+			key = 'ENGY_FRAME_ALPHA',
+			name = 'Battlespire Frame Opacity',
+			description = '',
+			renderer = R_SLIDER,
+			default = 1.0,
+			argument = sliderArg(0, 1, 0.05, '', 1.0),
+		},
+		{
+			key = 'VIAL_TINT',
+			name = 'Battlespire Tint',
+			description = 'Multiplied over the whole tube. White leaves the artwork\n'
+				.. 'exactly as drawn, which is usually what you want.',
+			renderer = R_COLOR,
+			default = colorDefault('FFFFFF'),
+			argument = { presetColors = presetColors },
 		},
 		{
 			key = 'HEALTH_COLOR',
@@ -319,15 +377,94 @@ settingsTemplate.RUNES = {
 	key = 'Settings' .. MODNAME .. 'Runes',
 	l10n = 'none',
 	name = 'Magicka Runes',
-	description = 'Eight runes, an eighth of your magicka each, in their own widget.\n'
-		.. 'The runes are always drawn. Behind them, a full eighth wears the\n'
-		.. 'thick halo and the one currently filling or emptying wears the thin\n'
-		.. 'one; a spent eighth has none. The flair behind all of it is what\n'
-		.. 'pulses.',
+	description = 'Runes dividing your magicka between them, in their own widget.\n'
+		.. 'Eight by default, or more if you lengthen the column. The runes are\n'
+		.. 'always drawn. On Classic, behind them, a full share wears the thick\n'
+		.. 'halo and the one currently filling or emptying wears the thin one; a\n'
+		.. 'spent share has none, and the flair behind all of it is what pulses.',
 	page = MODNAME,
 	permanentStorage = true,
 	order = getOrder(),
 	settings = {
+		{
+			key = 'RUNE_STYLE',
+			name = 'Rune Style',
+			description = 'Runes is the xs set: the eight runes separated on an even grid.\n'
+				.. 'Each one empties by losing its blue and leaving its outline.\n'
+				.. 'Classic is the original sheet with its two halos and flair.\n'
+				.. 'Pips counts castings instead of magicka, the way MMUI does,\n'
+				.. 'drawing one rune per cast and repeating the eight upward.',
+			renderer = R_SELECT,
+			default = 'Runes',
+			argument = selectArg { 'Runes', 'Classic', 'Pips' },
+		},
+		{
+			key = 'RUNE_LENGTH',
+			name = 'Rune Length (Runes)',
+			description = 'How many runes the column is drawn with. Each rune keeps the\n'
+				.. 'height it has at eight, so the column grows by gaining runes\n'
+				.. 'rather than by subdividing -- the eight shapes repeat upward.\n'
+				.. 'This is a finer readout, not just a taller one: a rune is one\n'
+				.. 'Nth of your magicka. Multiples of eight keep the pattern whole.\n'
+				.. 'Runes only -- the Classic sheet is eight measured bands of one\n'
+				.. 'image and cannot be extended.',
+			renderer = R_SLIDER,
+			default = 8,
+			argument = sliderArg(8, 32, 1, '', 8),
+		},
+		{
+			key = 'PIP_COLUMN',
+			name = 'Pips per Column',
+			description = 'How many pips stack before a new column starts.',
+			renderer = R_SLIDER,
+			default = 8,
+			argument = sliderArg(1, 32, 1, '', 8),
+		},
+		{
+			key = 'PIP_WRAP',
+			name = 'New Column Goes',
+			description = 'Which side of the main column the next one is added to.',
+			renderer = R_SELECT,
+			default = 'Right',
+			argument = selectArg { 'Right', 'Left' },
+		},
+		{
+			key = 'PIP_SIZE',
+			name = 'Pip Size',
+			description = 'The art is 45px square.',
+			renderer = R_SLIDER,
+			default = 22,
+			argument = sliderArg(6, 96, 1, 'px', 22),
+		},
+		{
+			key = 'PIP_GAP',
+			name = 'Pip Spacing',
+			description = 'Gap between pips, and between columns. Negative overlaps them,\n'
+				.. 'which is how the xs sheet stacks them.',
+			renderer = R_SLIDER,
+			default = -4,
+			argument = sliderArg(-24, 24, 1, 'px', -4),
+		},
+		{
+			key = 'PIP_SOURCE',
+			name = 'A Pip Is',
+			description = 'One casting of your selected spell, as in MMUI -- so the row\n'
+				.. 'shortens as a spell gets dearer. With no spell selected, or set\n'
+				.. 'to a fixed amount, each pip is the magicka below instead.',
+			renderer = R_SELECT,
+			default = 'One casting of the selected spell',
+			argument = selectArg { 'One casting of the selected spell',
+			                       'A fixed amount of magicka' },
+		},
+		{
+			key = 'PIP_MAGICKA',
+			name = 'Magicka per Pip',
+			description = 'Used when nothing is selected, or when the above is set to a\n'
+				.. 'fixed amount.',
+			renderer = R_SLIDER,
+			default = 10,
+			argument = sliderArg(1, 100, 1, '', 10),
+		},
 		{
 			key = 'RUNE_X_POS',
 			name = 'Horizontal Position',
@@ -615,7 +752,7 @@ local COLOR_KEYS = { HEALTH_COLOR = true, STAMINA_COLOR = true,
                      GLASS_TINT = true, RUNE_TINT = true, GLOW_TINT = true,
                      NUMBER_COLOR = true, HUD_BORDER_COLOR = true,
                      BULB_TINT = true, FITTING_TINT = true,
-                     FLAIR_TINT = true }
+                     FLAIR_TINT = true, VIAL_TINT = true }
 
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
@@ -657,6 +794,9 @@ local REBUILD = {
 	VIAL_SIZE = true,
 	RUNE_HEIGHT = true, RUNE_WIDTH = true, RUNE_FILL_FROM = true,
 	GLASS_TEXTURE = true, BULB_TEXTURE = true, CLEAR_CLASP_TEXTURE = true,
+	VIAL_STYLE = true, VIAL_LENGTH = true, ENGY_SET = true, ENGY_SHOW_FRAME = true,
+	RUNE_STYLE = true, RUNE_LENGTH = true, PIP_COLUMN = true, PIP_WRAP = true, PIP_SIZE = true,
+	PIP_GAP = true, PIP_SOURCE = true,
 	SHOW_RESIDUE = true, SHOW_CLASP = true, SHOW_CAP = true,
 	SHOW_NUMBERS = true, NUMBER_SIZE = true, NUMBER_FORMAT = true,
 }

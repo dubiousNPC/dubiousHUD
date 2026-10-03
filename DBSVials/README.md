@@ -136,23 +136,108 @@ colour setting tints it. The shipped defaults — `B60000` and `349F00` — are 
 supplied tubes' own colours exactly.
 
 **Vial Size** scales the whole assembly by one factor; 190 is the art at 1:1.
+**Vial Spacing** reaches a full screen width, so the two vials can sit in
+opposite corners while still being one draggable widget.
+
+---
+
+### Battlespire Vials
+
+**Vial Style** switches the pair to a plain test tube that drains through a
+colour ramp of its own: `ENGY01.png` runs green to red, `ENGY02.png` blue to
+red. Each is a 32-frame atlas, 28 x 82 a frame, frame 0 full and frame 31
+empty, so the fill is quantised to 32 states and the texture is only swapped
+when a different frame would be drawn.
+
+The colour is in the artwork, so the health and stamina colour settings do not
+apply to this style. `dbs_ENGY_frame.png` is an outline that can go over the
+tube (**Battlespire Frame**) for when it has to read against a bright sky.
+
+### Vial length
+
+**Vial Length** draws between 63 and 139 rows of tube. Everything below it —
+the clasp, the bulb, the foot of the liquid, the assembly height — moves up by
+the same amount, so the vessel stays one object and the liquid still fills it
+end to end. At 63 with the clasp switched off you get the short standalone vial.
+
+The tube comes from `glass_tube_lengths.png`, one frame per height, each
+bottom-aligned in a 139-row cell so any frame draws at one rect and the foot
+never moves. `dev/build_tube_atlas.py` rebuilds it.
+
+The three supplied pieces — `glass_tube_x_top` (rows 0–18 at x3),
+`glass_tube_x_middle` (rows 9–55 at x3), `glass_tube_x_bottom` (rows 89–138 at
+x0) — fit the original exactly and are what settle **where** the tube divides.
+They are not the pixel source: between them they miss rows 56–88, a third of the
+tube, so a sheet tiled from them lands about 10 off at full height and the
+longest setting would not match the classic vial. Each frame is cut from
+`glass_tube.png` itself instead, which makes full length bit-identical and puts
+the shortening just above the foot where the tube is plainest.
+
+`glass_tube_short.png` is the top at y0 and the bottom at y13 overlapping by six
+rows — the same art — which is why the range starts at 63 and runs continuously.
 
 ---
 
 ## The runes
 
-Four sheets, all 70 x 328 and registered pixel-for-pixel, drawn back to front:
+Three styles, set by **Rune Style**.
+
+### Runes (the default)
+
+`KainGameRUNES_xs.png` — the same eight runes redrawn separated and ordered on
+an even grid: 27 x 240, eight cells of exactly 30 rows, so the cells need no
+measuring. Two layers and only two:
 
 ```
-FLAIR.png       a solid blob behind everything, for pulses and flashes
-GLOW_UP2.png    the thick halo, on a rune whose eighth is completely full
-GLOW_UP1.png    the thin halo, on the one rune currently filling or emptying
-RUNES_x.png     the runes themselves, always drawn
+KainGameRUNES_xs_empty.png   the outline, always drawn, one cell per rune
+KainGameRUNES_xs.png         the blue, over it, one cell per rune
 ```
 
-They nest — every `GLOW_UP1` pixel is inside `GLOW_UP2`, every `GLOW_UP2` pixel
-is inside `FLAIR`, and every rune pixel is inside `FLAIR`. That is what lets a
-rune step from thin halo to thick without the outline jumping.
+A rune empties by losing its blue and leaving its outline. Outline + blue
+reproduces `KainGameRUNES_xs_full.png` exactly — zero difference — so the two
+layers are the full sheet, and `_xs_full` and `_xs_ARRAY` are reference art
+rather than anything the mod loads.
+
+Both layers are cut per cell rather than drawn as one image. That is what lets
+the column be lengthened.
+
+#### Rune length
+
+**Rune Length** draws between 8 and 32 runes, the same gesture as the vial's
+length and for the same reason: the column grows by *gaining* runes, not by
+subdividing the same space smaller. A rune keeps the height it has at eight —
+**Rune Height** stays the height of eight of them — and the eight shapes repeat
+upward the way the pips do, so at 8 the column is pixel-identical to a fixed
+eight and at 16 it is twice as tall.
+
+One thing it does that the vial's length does not: it changes what a rune
+*means*. The liquid still reads 0–100% whatever length the tube is, but a rune
+is one *N*th of your magicka, so a longer column is a **finer readout** — at 32
+a rune goes out every 3% rather than every 12.5%. Multiples of eight keep the
+pattern whole; other lengths work and simply cut the repeat short at the top.
+
+Runes only. The Classic sheet's eight are measured bands of one specific image
+(`RUNE_CUTS`), not an even grid, so there is nothing there to repeat — the
+setting is ignored on Classic and on Pips, which has **Pips per Column** instead.
+
+### Pips
+
+One rune per casting, the way MMUI counts them, so the row shortens as a spell
+gets dearer. **A Pip Is** chooses between a casting of your selected spell and a
+fixed amount of magicka; with nothing selected it falls back to the fixed amount
+rather than showing an empty row.
+
+The eight shapes repeat upward in the sheet's order. **Pips per Column** sets how
+many stack before a new column starts and **New Column Goes** which side it goes
+— set to Left, the main column sits at the right edge so later columns grow away
+from it and nothing already drawn moves. All 64 elements are built once and
+hidden; counting up and down is a visibility flag.
+
+### Classic
+
+The original sheet, with its two halos and the flair behind them, unchanged.
+
+---
 
 ### The three states
 
@@ -295,7 +380,7 @@ LUA=texlua dev/check_all.sh   # a LuaTeX install already carries one
 `dev/load_check.lua` stubs enough of the OpenMW API to load the mod offline,
 including live dynamic-stat accessors the tests can drive. The suite:
 
-- **146 behavioural checks** against the real module and the real widget tree.
+- **233 behavioural checks** against the real module and the real widget tree.
   `dev/test_vials.lua` deliberately re-implements none of the module's logic — a
   test that mirrors the code only ever proves the mirror is faithful. It drives
   `onUpdate` and reads the tree that was actually built.
@@ -303,6 +388,9 @@ including live dynamic-stat accessors the tests can drive. The suite:
 - The six vial pieces checked for register at five sizes, and the rune slices
   for gaps and overlaps at four column heights. Both are read off the tree the
   module builds, not asserted against a copy of the arithmetic.
+- The xs column checked at five lengths for cell count, contiguity, a rune
+  keeping its height, the eight shapes repeating, and the readout stepping in
+  *N*ths.
 - Stat extremes, including all three at zero and magicka at 0.1%.
 - A `pcall` audit over the shipped scripts.
 
@@ -310,7 +398,8 @@ The behavioural tests are mutation-checked. Flipping the rune fill order,
 removing the stat clamp, drawing the glow over the base runes instead of behind
 them, setting the clasp overlap to zero, letting the fill travel run under the
 collar, floating the collar off the tube, rounding the rune slices so they open
-a one-pixel gap, tinting both dregs the same, putting both halos on one rune,
+a one-pixel gap, shrinking the runes to fit a longer column into the same
+height, tinting both dregs the same, putting both halos on one rune,
 swapping the thin and thick halos, showing the flair under spent runes,
 stopping the flash from decaying, and interleaving the flair with the halos
 instead of keeping it behind them all each make the suite fail.

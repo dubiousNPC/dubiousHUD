@@ -72,6 +72,24 @@ BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 SHOW_CLASP=false,SHOW_CAP=false,SHOW_RESIDUE=true
 BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
+VIAL_STYLE=Battlespire
+VIAL_STYLE=Battlespire,ENGY_SHOW_FRAME=true
+VIAL_STYLE=Battlespire,ENGY_SET=ENGY02 (cool)
+VIAL_LENGTH=63
+VIAL_LENGTH=100
+VIAL_LENGTH=63,SHOW_CLASP=false
+RUNE_STYLE=Classic
+RUNE_LENGTH=16
+RUNE_LENGTH=32
+RUNE_LENGTH=9
+RUNE_LENGTH=32,RUNE_HEIGHT=512
+RUNE_LENGTH=16,SHOW_NUMBERS=true
+RUNE_STYLE=Classic,RUNE_LENGTH=32
+RUNE_STYLE=Pips
+RUNE_STYLE=Pips,PIP_COLUMN=1
+RUNE_STYLE=Pips,PIP_COLUMN=32,PIP_WRAP=Left
+RUNE_STYLE=Pips,PIP_SOURCE=A fixed amount of magicka,PIP_MAGICKA=1
+SPACING=1200
 CONFIGS
 
 # The runes have to land on the runes at every column height, or the glow sits
@@ -80,7 +98,23 @@ CONFIGS
 # The vial is six pieces placed from measured art figures and scaled by one
 # factor. If any of them were placed with an unscaled number it would drift out
 # of register at a non-default size and nowhere else.
-echo "--- vial pieces stay in register at any size"
+# Battlespire is one image, so the piece count below is the Classic assembly.
+echo "--- Battlespire draws one tube and none of the assembly"
+for size in 40 82 300; do
+    out=$(PRESEED="VIAL_STYLE=Battlespire,VIAL_SIZE=$size" DUMP_TREE=vialsHud \
+        "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1)
+    n=$(echo "$out" | grep -cE '^      engyhealth')
+    stray=$(echo "$out" | grep -cE '^      (clasp|fill|clear|glass|cap)health')
+    last=$(echo "$out" | tail -1)
+    if [ "$n" = 1 ] && [ "$stray" = 0 ] && [ "$last" = OK ]; then
+        printf '  size %-4s OK\n' "$size"
+    else
+        printf '  size %-4s FAIL  tube=%s stray=%s %s\n' "$size" "$n" "$stray" "$last"
+        fail=1
+    fi
+done
+
+echo "--- vial pieces stay in register at any size (Classic)"
 for size in 24 95 190 380 600; do
     out=$(PRESEED="VIAL_SIZE=$size" DUMP_TREE=vialsHud "$LUA" dev/load_check.lua . \
         scripts/dbsvials/DBV_p.lua 2>&1)
@@ -94,10 +128,10 @@ for size in 24 95 190 380 600; do
     fi
 done
 
-echo "--- rune slices line up at any size"
+echo "--- Classic rune slices line up at any size"
 for h in 64 139 276 512; do
-    out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
-        scripts/dbsvials/DBV_p.lua 2>&1)
+    out=$(PRESEED="RUNE_STYLE=Classic,RUNE_HEIGHT=$h" DUMP_TREE=runesHud \
+        "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1)
     n=$(echo "$out" | grep -cE '^    glowThin[1-8] ')
     last=$(echo "$out" | tail -1)
     if [ "$n" = 8 ] && [ "$last" = OK ]; then
@@ -110,6 +144,40 @@ done
 
 # The empty case is the one that tends to crash: nothing enabled means an empty
 # Flex, and a drag handler still pointing at it.
+echo "--- xs rune cells line up at any size"
+for h in 64 139 276 512; do
+    out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
+        scripts/dbsvials/DBV_p.lua 2>&1)
+    n=$(echo "$out" | grep -cE '^    xs[1-8] ')
+    last=$(echo "$out" | tail -1)
+    if [ "$n" = 8 ] && [ "$last" = OK ]; then
+        printf '  height %-4s OK  (8 cells)\n' "$h"
+    else
+        printf '  height %-4s FAIL  %s cells, %s\n' "$h" "$n" "$last"
+        fail=1
+    fi
+done
+
+# Rune Length extends the column by adding runes rather than by subdividing it,
+# so a rune has to keep the height it has at eight and the column has to stay
+# contiguous at every length. Read off the tree, not asserted against a copy of
+# the arithmetic.
+echo "--- xs column extends by whole runes"
+for n in 8 9 16 24 32; do
+    out=$(PRESEED="RUNE_LENGTH=$n" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
+        scripts/dbsvials/DBV_p.lua 2>&1)
+    cells=$(echo "$out" | grep -cE '^    xs[0-9]+ ')
+    outl=$(echo "$out" | grep -cE '^    runeOutline[0-9]+ ')
+    last=$(echo "$out" | tail -1)
+    if [ "$cells" = "$n" ] && [ "$outl" = "$n" ] && [ "$last" = OK ]; then
+        printf '  length %-3s OK  (%s cells, %s outlines)\n' "$n" "$cells" "$outl"
+    else
+        printf '  length %-3s FAIL  cells=%s outlines=%s %s\n' \
+            "$n" "$cells" "$outl" "$last"
+        fail=1
+    fi
+done
+
 echo "--- stat extremes"
 for st in "health=0,stamina=0,magicka=0" "health=1,stamina=1,magicka=1" \
           "magicka=0.001" "magicka=0.999"; do
