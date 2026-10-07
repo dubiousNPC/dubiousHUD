@@ -160,6 +160,21 @@ the clasp, the bulb, the foot of the liquid, the assembly height — moves up by
 the same amount, so the vessel stays one object and the liquid still fills it
 end to end. At 63 with the clasp switched off you get the short standalone vial.
 
+It is a **separate setting from Vial Size**, and the two do not interact. Size is
+how big the glass is drawn; length is how much of it there is. The scale is taken
+from the full 190-row art height, never from the shortened height, so the width
+and every fitting stay exactly as Size set them and a shorter vial is simply
+shorter on screen:
+
+| Vial Size 190 | 139 rows | 120 | 100 | 80 | 63 |
+|---|---|---|---|---|---|
+| widget | 40 x 190 | 40 x 171 | 40 x 151 | 40 x 131 | 40 x 114 |
+
+Scaling by the shortened height instead would make Size mean "fill this many
+pixels whatever the length", which is the same setting wearing two labels: the
+vial would hold 190px at every length and reach 66 wide at 63 rows — a 65%
+fattening nobody asked for. Width is the tell, so width is what the tests read.
+
 The tube comes from `glass_tube_lengths.png`, one frame per height, each
 bottom-aligned in a 139-row cell so any frame draws at one rect and the foot
 never moves. `dev/build_tube_atlas.py` rebuilds it.
@@ -380,7 +395,7 @@ LUA=texlua dev/check_all.sh   # a LuaTeX install already carries one
 `dev/load_check.lua` stubs enough of the OpenMW API to load the mod offline,
 including live dynamic-stat accessors the tests can drive. The suite:
 
-- **233 behavioural checks** against the real module and the real widget tree.
+- **293 behavioural checks** against the real module and the real widget tree.
   `dev/test_vials.lua` deliberately re-implements none of the module's logic — a
   test that mirrors the code only ever proves the mirror is faithful. It drives
   `onUpdate` and reads the tree that was actually built.
@@ -388,6 +403,8 @@ including live dynamic-stat accessors the tests can drive. The suite:
 - The six vial pieces checked for register at five sizes, and the rune slices
   for gaps and overlaps at four column heights. Both are read off the tree the
   module builds, not asserted against a copy of the arithmetic.
+- Vial width and fitting sizes checked against Vial Length at three scales, so
+  the two settings cannot quietly become one.
 - The xs column checked at five lengths for cell count, contiguity, a rune
   keeping its height, the eight shapes repeating, and the readout stepping in
   *N*ths.
@@ -399,7 +416,8 @@ removing the stat clamp, drawing the glow over the base runes instead of behind
 them, setting the clasp overlap to zero, letting the fill travel run under the
 collar, floating the collar off the tube, rounding the rune slices so they open
 a one-pixel gap, shrinking the runes to fit a longer column into the same
-height, tinting both dregs the same, putting both halos on one rune,
+height, tinting both dregs the same, taking the vial's
+scale from its shortened height instead of the full art, putting both halos on one rune,
 swapping the thin and thick halos, showing the flair under spent runes,
 stopping the flash from decaying, and interleaving the flair with the halos
 instead of keeping it behind them all each make the suite fail.

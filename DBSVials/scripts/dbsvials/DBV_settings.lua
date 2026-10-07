@@ -197,9 +197,11 @@ settingsTemplate.VIALS = {
 		{
 			key = 'VIAL_SIZE',
 			name = 'Vial Size',
-			description = 'Overall height of the whole assembly -- collar, tube, clasp and\n'
-				.. 'bulb together. Width follows, so the fittings keep the\n'
-				.. 'proportions they were drawn with. 190 is the art at 1:1.',
+			description = 'How big the glass is drawn. Width and every fitting follow it,\n'
+				.. 'so the vessel keeps the proportions it was drawn with.\n'
+				.. '190 is the art at 1:1, and is the height of a full-length vial.\n'
+				.. 'Independent of Vial Length: shortening a vial makes it shorter\n'
+				.. 'on screen, never thicker.',
 			renderer = R_SLIDER,
 			default = 190,
 			argument = sliderArg(24, 600, 1, 'px', 190),
@@ -207,10 +209,12 @@ settingsTemplate.VIALS = {
 		{
 			key = 'VIAL_LENGTH',
 			name = 'Vial Length (Classic)',
-			description = 'How much of the tube is drawn, in rows of the original art.\n'
+			description = 'How much tube there is, in rows of the original art.\n'
 				.. '139 is the full vial; 63 is the short one. The clasp, the bulb\n'
 				.. 'and the foot of the liquid all move up together, so the vessel\n'
-				.. 'stays one object and the liquid still fills it end to end.',
+				.. 'stays one object and the liquid still fills it end to end.\n'
+				.. 'This is a different thing from Vial Size: the glass stays the\n'
+				.. 'size you set it to and there is simply less of it.',
 			renderer = R_SLIDER,
 			default = 139,
 			argument = sliderArg(63, 139, 1, 'px', 139),

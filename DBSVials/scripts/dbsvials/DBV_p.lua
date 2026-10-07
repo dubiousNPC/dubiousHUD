@@ -447,6 +447,13 @@ end
 --------------------------------------------------------------------------------
 
 --- Scale factor and pixel size of one vial assembly.
+---
+--- Scale and length are independent, which is the whole point of having both.
+--- The scale comes from the FULL art height, never from the shortened one, so
+--- Vial Size means "how big the glass is" and Vial Length means "how much of it
+--- there is". Dividing by the shortened height instead would make the setting
+--- "fill this many pixels whatever the length", and shortening the vial would
+--- silently fatten it -- same screen height, thicker glass.
 local function vialMetrics()
 	local size = math.max(24, math.floor(VIAL_SIZE or NATURAL_H))
 	if battlespire() then
@@ -456,9 +463,11 @@ local function vialMetrics()
 		return k, math.max(1, math.floor(ENGY_W * k)), size, 0
 	end
 	local _, D = tubeLength()
-	local natural = NATURAL_H - D
-	local k = size / natural
-	return k, math.max(1, math.floor(NATURAL_W * k)), size, D
+	local k = size / NATURAL_H
+	-- The widget shrinks with the vessel rather than the vessel growing to fill
+	-- the widget. Size is the height at full length; a shorter vial is shorter.
+	local h = math.max(1, math.floor((NATURAL_H - D) * k + 0.5))
+	return k, math.max(1, math.floor(NATURAL_W * k)), h, D
 end
 
 local function runeMetrics()

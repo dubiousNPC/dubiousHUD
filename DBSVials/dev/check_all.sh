@@ -78,6 +78,9 @@ VIAL_STYLE=Battlespire,ENGY_SET=ENGY02 (cool)
 VIAL_LENGTH=63
 VIAL_LENGTH=100
 VIAL_LENGTH=63,SHOW_CLASP=false
+VIAL_LENGTH=63,VIAL_SIZE=600
+VIAL_LENGTH=63,VIAL_SIZE=24
+VIAL_LENGTH=100,VIAL_SIZE=380
 RUNE_STYLE=Classic
 RUNE_LENGTH=16
 RUNE_LENGTH=32
@@ -162,6 +165,30 @@ done
 # so a rune has to keep the height it has at eight and the column has to stay
 # contiguous at every length. Read off the tree, not asserted against a copy of
 # the arithmetic.
+# Size is how big the glass is, length is how much of it there is. If the scale
+# were taken from the shortened height the two would be the same setting wearing
+# different labels: the vial would hold its screen height and fatten as it got
+# shorter. Width is the tell, so width is what is read.
+echo "--- vial width is unchanged by length"
+for size in 95 190 380; do
+    ref=$(PRESEED="VIAL_SIZE=$size,VIAL_LENGTH=139" DUMP_TREE=vialsHud \
+        "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1 \
+        | grep -oE 'healthVial +size=\([0-9]+' | grep -oE '[0-9]+$')
+    bad=
+    for L in 120 100 80 63; do
+        w=$(PRESEED="VIAL_SIZE=$size,VIAL_LENGTH=$L" DUMP_TREE=vialsHud \
+            "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1 \
+            | grep -oE 'healthVial +size=\([0-9]+' | grep -oE '[0-9]+$')
+        [ "$w" = "$ref" ] || bad="$bad L=$L:$w"
+    done
+    if [ -z "$bad" ]; then
+        printf '  size %-4s OK  (width %s at every length)\n' "$size" "$ref"
+    else
+        printf '  size %-4s FAIL  want %s, got%s\n' "$size" "$ref" "$bad"
+        fail=1
+    fi
+done
+
 echo "--- xs column extends by whole runes"
 for n in 8 9 16 24 32; do
     out=$(PRESEED="RUNE_LENGTH=$n" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \

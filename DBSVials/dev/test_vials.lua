@@ -858,9 +858,10 @@ do
 		-- the tube is cut from the length sheet at the frame for L
 		local r = g.props.resource
 		check(r._offset ~= nil, 'the tube is cut, not whole, at ' .. L)
-		-- The clasp has to stay the same distance from the tube's end. Measured
-		-- in ART rows, not drawn pixels: a shorter vial at the same Vial Size is
-		-- drawn at a larger scale, so every drawn distance grows with it.
+		-- The clasp has to stay the same distance from the tube's end, measured
+		-- in art rows. Scale and length are independent now, so k is the same
+		-- at every length -- but the measure is kept in art rows anyway, so this
+		-- check is about the clasp and not about the scale.
 		local v = findNode('healthVial')
 		local k = v.props.size.y / (190 - (139 - L))
 		local gap = (c.props.position.y - (g.props.position.y + g.props.size.y)) / k
@@ -880,6 +881,50 @@ do
 		local r = g.props.resource
 		check(r._offset.y == (139 - 63) * 139, 'full length reads the last frame of the sheet')
 	end
+	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
+	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+end
+
+print('=== 22. length and size are independent settings ===')
+-- Two different things: size is how big the glass is, length is how much of it
+-- there is. Deriving the scale from the SHORTENED height instead of the full one
+-- couples them -- the vial would hold the same screen height at every length and
+-- get thicker as it got shorter, which is a size change nobody asked for.
+do
+	local storage = require('openmw.storage')
+	local sec = storage.playerSection('SettingsDBSVialsVials')
+	for _, size in ipairs { 95, 190, 380 } do
+		sec:set('VIAL_SIZE', size)
+		sec:set('VIAL_LENGTH', 139)
+		local full = findNode('healthVial').props.size
+		local fullClasp = findNode('clasphealth').props.size
+		local fullBulbX = findNode('clasphealth').props.position.x
+
+		for _, L in ipairs { 120, 100, 80, 63 } do
+			sec:set('VIAL_LENGTH', L)
+			local v = findNode('healthVial').props.size
+			local c = findNode('clasphealth')
+
+			-- nothing about the glass itself changes
+			check(v.x == full.x, string.format(
+				'width is the same at length %d, size %d (%d vs %d)',
+				L, size, v.x, full.x))
+			check(c.props.size.y == fullClasp.y and c.props.size.x == fullClasp.x,
+				string.format('the clasp is the same size at length %d, size %d', L, size))
+			check(c.props.position.x == fullBulbX,
+				'and sits at the same x at length ' .. L)
+
+			-- the widget loses exactly the rows the tube lost, at the set scale
+			local k = size / 190
+			local want = math.floor((190 - (139 - L)) * k + 0.5)
+			check(math.abs(v.y - want) <= 1, string.format(
+				'the vial is shorter by the rows removed at length %d, size %d (%d, want %d)',
+				L, size, v.y, want))
+			check(v.y < full.y, 'and is shorter than a full one at length ' .. L)
+		end
+	end
+	sec:set('VIAL_SIZE', 190)
+	sec:set('VIAL_LENGTH', 139)
 	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
 	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
 end
