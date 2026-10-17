@@ -718,7 +718,7 @@ I.Settings.registerPage {
 
 local COLOR_KEYS = { COMPASS_TINT = true, HUD_BORDER_COLOR = true,
                      OVERLAY_TINT = true, FACE_TINT = true,
-                     CARDINAL_TINT = true }
+                     CARDINAL_TINT = true, COVER_TINT = true }
 local function normalise(k, v)
 	if COLOR_KEYS[k] and type(v) == 'string' then
 		local hex = v:gsub('^#', '')

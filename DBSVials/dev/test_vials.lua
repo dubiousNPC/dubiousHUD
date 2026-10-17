@@ -61,6 +61,27 @@ local function stateStr()
 end
 local function show(t) return table.concat(t, '') end
 
+--- Read a setting back without naming its group, the mirror of setSetting.
+local function getSetting(key)
+	return require('openmw.storage').playerSection(sectionOf(key)):get(key)
+end
+
+-- Most of what follows measures the art at 1:1, so it pins the two settings
+-- that decide the scale rather than inheriting whatever the defaults happen to
+-- be. The defaults are the author's own configuration and are free to move;
+-- a test that silently depended on them would break every time they did.
+do
+	local storage = require('openmw.storage')
+	setSetting('VIAL_SIZE', 190)
+	setSetting('VIAL_LENGTH', 139)
+	setSetting('RUNE_SIZE', 24)
+	setSetting('RUNE_LENGTH', 8)
+	-- Smoothing is on by default and most of what follows measures a level one
+	-- frame after setting a stat, which is mid-ease. The sections that are
+	-- about smoothing turn it on for themselves.
+	setSetting('FILL_SMOOTHING', 0)
+end
+
 print('=== 1. the vials and the runes are two independent widgets ===')
 local vialRoot, runeRoot = findNode('vialsHud'), findNode('runesHud')
 check(vialRoot ~= nil, 'vialsHud exists')
@@ -165,9 +186,8 @@ print('=== 3b. the registration holds at a different size ===')
 -- with an unscaled figure it would drift out of register here and nowhere else.
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsVials')
 	for _, size in ipairs { 95, 380 } do
-		sec:set('VIAL_SIZE', size)
+		setSetting('VIAL_SIZE', size)
 		-- The widgets were destroyed and rebuilt by that write, so everything
 		-- has to be looked up again. Anything cached from before now points at
 		-- a tree that no longer exists.
@@ -184,7 +204,7 @@ do
 		check(cp.props.position.y + cp.props.size.y > g.props.position.y,
 			'the collar still overlaps the tube top at ' .. size)
 	end
-	sec:set('VIAL_SIZE', 190)
+	setSetting('VIAL_SIZE', 190)
 end
 
 -- Re-bind everything the earlier sections captured: the tree above is gone.
@@ -263,8 +283,7 @@ print('=== 7. the optional dreg is tinted per vial ===')
 -- colour: it is the same texture in both, so the tint is what differs.
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsVials')
-	sec:set('SHOW_RESIDUE', true)
+	setSetting('SHOW_RESIDUE', true)
 	local rh, rs = findNode('residuehealth'), findNode('residuestamina')
 	check(rh ~= nil and rs ~= nil, 'switching the dreg on adds it to both vials')
 	if rh and rs then
@@ -273,7 +292,7 @@ do
 		check(tostring(rh.props.color) ~= tostring(rs.props.color),
 			'but tinted differently')
 	end
-	sec:set('SHOW_RESIDUE', false)
+	setSetting('SHOW_RESIDUE', false)
 	check(findNode('residuehealth') == nil, 'and switching it off removes it again')
 	-- the tree was rebuilt three times over; re-bind everything
 	rebindRunes()
@@ -288,7 +307,7 @@ end
 -- so switch to it first. Everything cached above belongs to the previous tree.
 do
 	local storage = require('openmw.storage')
-	storage.playerSection('SettingsDBSVialsRunes'):set('RUNE_STYLE', 'Classic')
+	setSetting('RUNE_STYLE', 'Classic')
 	rebindRunes()
 	base = findNode('runeBase')
 	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
@@ -446,7 +465,7 @@ end
 print('=== 12d. the flair is the pulse layer, and is off until something pulses ===')
 do
 	local storage = require('openmw.storage')
-	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'Off')
+	setSetting('LOW_WARNING', 'Off')
 	rebindRunes()
 	frame(1, 1, 1)
 	local anyOn = false
@@ -478,7 +497,7 @@ do
 	-- Dimming was the wrong cue: going darker is what running out already
 	-- looks like.
 	local storage = require('openmw.storage')
-	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'All three')
+	setSetting('LOW_WARNING', 'All three')
 	rebindRunes()
 	base = findNode('runeBase')
 	local baseAlphaBefore = base.props.alpha
@@ -490,7 +509,7 @@ do
 	check(seen, 'low magicka pulses the flair')
 	check(base.props.alpha == baseAlphaBefore,
 		'and leaves the runes themselves at full brightness')
-	storage.playerSection('SettingsDBSVialsAccess'):set('LOW_WARNING', 'Off')
+	setSetting('LOW_WARNING', 'Off')
 	rebindRunes()
 	base = findNode('runeBase')
 end
@@ -562,7 +581,7 @@ print('=== 17. the xs rune set: outline always, blue per rune ===')
 -- one image so that the column can be lengthened by repeating them.
 do
 	local storage = require('openmw.storage')
-	storage.playerSection('SettingsDBSVialsRunes'):set('RUNE_STYLE', 'Runes')
+	setSetting('RUNE_STYLE', 'Runes')
 	local outlines = collectNodes('runeOutline')
 	local xs = collectNodes('xs')
 	local no = 0
@@ -633,13 +652,12 @@ print('=== 18. rune length extends the xs column ===')
 -- changes is what a rune MEANS -- one Nth of magicka, so a finer readout.
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsRunes')
-	sec:set('RUNE_STYLE', 'Runes')
+	setSetting('RUNE_STYLE', 'Runes')
 	local base = findNode('runeColumn').props.size.y
 	local baseCell = collectNodes('xs').xs1.props.size.y
 
 	for _, n in ipairs { 8, 9, 16, 24, 32 } do
-		sec:set('RUNE_LENGTH', n)
+		setSetting('RUNE_LENGTH', n)
 		local col = findNode('runeColumn')
 		local xs  = collectNodes('xs')
 		local out = collectNodes('runeOutline')
@@ -711,23 +729,22 @@ do
 	end
 
 	-- the public interface reports the count that is actually drawn
-	sec:set('RUNE_LENGTH', 16)
+	setSetting('RUNE_LENGTH', 16)
 	frame(nil, nil, 1)
 	local l, total = MODULE.interface.getLitRunes()
 	check(total == 16, 'getLitRunes reports 16 runes, got ' .. tostring(total))
 	check(l == 16, 'and all of them lit at full magicka, got ' .. tostring(l))
-	sec:set('RUNE_LENGTH', 8)
+	setSetting('RUNE_LENGTH', 8)
 end
 
 print('=== 19. pips ===')
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsRunes')
-	sec:set('RUNE_STYLE', 'Pips')
-	sec:set('PIP_SOURCE', 'A fixed amount of magicka')
-	sec:set('PIP_MAGICKA', 10)
-	sec:set('PIP_COLUMN', 8)
-	sec:set('PIP_WRAP', 'Right')
+	setSetting('RUNE_STYLE', 'Pips')
+	setSetting('PIP_SOURCE', 'A fixed amount of magicka')
+	setSetting('PIP_MAGICKA', 10)
+	setSetting('PIP_COLUMN', 8)
+	setSetting('PIP_WRAP', 'Right')
 	local pips = collectNodes('pip')
 	local function shown()
 		local n = 0
@@ -760,14 +777,14 @@ do
 	check(pips.pip9.props.position.y == pips.pip1.props.position.y,
 		'and starts at the bottom again')
 
-	sec:set('PIP_WRAP', 'Left')
+	setSetting('PIP_WRAP', 'Left')
 	pips = collectNodes('pip')
 	check(pips.pip9.props.position.x < pips.pip1.props.position.x,
 		'set to Left, the new column goes the other way')
 	check(pips.pip1.props.position.x > 0,
 		'and the main column moves off the left edge to make room')
 
-	sec:set('PIP_COLUMN', 4)
+	setSetting('PIP_COLUMN', 4)
 	pips = collectNodes('pip')
 	check(pips.pip4.props.position.x == pips.pip1.props.position.x and
 	      pips.pip5.props.position.x ~= pips.pip1.props.position.x,
@@ -780,16 +797,15 @@ do
 	check(a.pip1.props.resource._texture ~= a.pip2.props.resource._texture,
 		'but pip 2 is a different one')
 
-	sec:set('RUNE_STYLE', 'Runes')
-	sec:set('PIP_COLUMN', 8)
-	sec:set('PIP_WRAP', 'Right')
+	setSetting('RUNE_STYLE', 'Runes')
+	setSetting('PIP_COLUMN', 8)
+	setSetting('PIP_WRAP', 'Right')
 end
 
 print('=== 20. Battlespire vials ===')
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsVials')
-	sec:set('VIAL_STYLE', 'Battlespire')
+	setSetting('VIAL_STYLE', 'Battlespire')
 	local e = findNode('engyhealth')
 	check(e ~= nil, 'the Battlespire tube is drawn')
 	check(findNode('fillhealth') == nil, 'and none of the Classic assembly is')
@@ -824,7 +840,7 @@ do
 
 	-- the optional outline
 	check(findNode('engyframehealth') == nil, 'the frame is off by default')
-	sec:set('ENGY_SHOW_FRAME', true)
+	setSetting('ENGY_SHOW_FRAME', true)
 	check(findNode('engyframehealth') ~= nil, 'switching it on adds it')
 	do
 		local col = findNode('healthVial')
@@ -832,8 +848,8 @@ do
 		for i, ch in ipairs(col.content._items) do pos[ch.name] = i end
 		check(pos.engyframehealth > pos.engyhealth, 'and it is drawn over the tube')
 	end
-	sec:set('ENGY_SHOW_FRAME', false)
-	sec:set('VIAL_STYLE', 'Classic')
+	setSetting('ENGY_SHOW_FRAME', false)
+	setSetting('VIAL_STYLE', 'Classic')
 	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
 	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
 	hclear = findNode('clearhealth')
@@ -845,14 +861,13 @@ print('=== 21. vial length ===')
 -- the clasp detaches from the tube and the liquid stops reaching the foot.
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsVials')
 	local function geom()
 		local g, c, f = findNode('glasshealth'), findNode('clasphealth'), findNode('fillhealth')
 		return g, c, f
 	end
 	local prevGap
 	for _, L in ipairs { 139, 120, 100, 80, 63 } do
-		sec:set('VIAL_LENGTH', L)
+		setSetting('VIAL_LENGTH', L)
 		local g, c, f = geom()
 		check(g ~= nil and c ~= nil and f ~= nil, 'the vial still builds at length ' .. L)
 		-- the tube is cut from the length sheet at the frame for L
@@ -875,7 +890,7 @@ do
 		frame(1, nil, nil)
 		check(f.props.size.y > 0, 'a full vial has liquid at length ' .. L)
 	end
-	sec:set('VIAL_LENGTH', 139)
+	setSetting('VIAL_LENGTH', 139)
 	do
 		local g = findNode('glasshealth')
 		local r = g.props.resource
@@ -892,16 +907,15 @@ print('=== 22. length and size are independent settings ===')
 -- get thicker as it got shorter, which is a size change nobody asked for.
 do
 	local storage = require('openmw.storage')
-	local sec = storage.playerSection('SettingsDBSVialsVials')
 	for _, size in ipairs { 95, 190, 380 } do
-		sec:set('VIAL_SIZE', size)
-		sec:set('VIAL_LENGTH', 139)
+		setSetting('VIAL_SIZE', size)
+		setSetting('VIAL_LENGTH', 139)
 		local full = findNode('healthVial').props.size
 		local fullClasp = findNode('clasphealth').props.size
 		local fullBulbX = findNode('clasphealth').props.position.x
 
 		for _, L in ipairs { 120, 100, 80, 63 } do
-			sec:set('VIAL_LENGTH', L)
+			setSetting('VIAL_LENGTH', L)
 			local v = findNode('healthVial').props.size
 			local c = findNode('clasphealth')
 
@@ -923,10 +937,368 @@ do
 			check(v.y < full.y, 'and is shorter than a full one at length ' .. L)
 		end
 	end
-	sec:set('VIAL_SIZE', 190)
-	sec:set('VIAL_LENGTH', 139)
+	setSetting('VIAL_SIZE', 190)
+	setSetting('VIAL_LENGTH', 139)
 	hf, hglass = findNode('fillhealth'), findNode('glasshealth')
 	hclasp, hcap = findNode('clasphealth'), findNode('caphealth')
+end
+
+print('=== 23. one size setting, and the art keeps its shape ===')
+-- There used to be a height slider and a width slider, and the wheel drove the
+-- width from the width it had just rounded. That compounds: scroll up and back
+-- down and the column does not return. One number and a derived width cannot
+-- drift, because the width is never read back.
+do
+	local function column(style, size)
+		setSetting('RUNE_STYLE', style)
+		setSetting('RUNE_SIZE', size)
+		local c = findNode('runeColumn')
+		return c.props.size.x, c.props.size.y
+	end
+
+	for _, style in ipairs { 'Runes', 'Classic' } do
+		local w0, h0 = column(style, 24)
+		local ratio = w0 / h0
+		for _, sz in ipairs { 6, 12, 24, 40, 64 } do
+			local w, h = column(style, sz)
+			check(math.abs(w / h - ratio) < 0.04, string.format(
+				'%s keeps its aspect at size %d (%d x %d, %.3f vs %.3f)',
+				style, sz, w, h, w / h, ratio))
+		end
+		-- and it is the ART's aspect, not whatever the first measurement was
+		local aw, ah = 27, 30
+		if style == 'Classic' then aw, ah = 70, 292 / 8 end
+		local w, h = column(style, 32)
+		check(math.abs(w - math.floor(32 * aw / ah + 0.5)) <= 1, string.format(
+			'%s is drawn at the sheet aspect, not stretched (%d wide, art wants %d)',
+			style, w, math.floor(32 * aw / ah + 0.5)))
+	end
+	setSetting('RUNE_STYLE', 'Runes')
+	setSetting('RUNE_SIZE', 24)
+end
+
+print('=== 24. the resize wheel ===')
+-- A fixed step in pixels cannot feel the same at both ends of a range. The step
+-- is a ratio, so a notch moves everything by the same proportion -- and the two
+-- widgets move alike despite having quite different ranges.
+do
+	local function drag(hud, on)
+		local el = findNode(hud)
+		el.userData = el.userData or {}
+		el.userData.isDragging = on
+	end
+
+	-- vials. The size is set BEFORE the grab on purpose: a settings change
+	-- rebuilds the widget, and the point of the state living outside the
+	-- widget is that a rebuild between notches does not end the gesture.
+	setSetting('VIAL_SIZE', 100)
+	drag('vialsHud', true); drag('runesHud', false)
+	local before = findNode('healthVial').props.size.y
+	fireTrigger('MenuMouseWheelUp')
+	local afterUp = findNode('healthVial').props.size.y
+	check(afterUp > before, 'a notch up grows the vial (' .. before .. ' -> ' .. afterUp .. ')')
+
+	-- proportional: the step at 400 is bigger than the step at 100
+	local function step(from)
+		setSetting('VIAL_SIZE', from)
+		local a = getSetting('VIAL_SIZE')
+		fireTrigger('MenuMouseWheelUp')
+		return getSetting('VIAL_SIZE') - a
+	end
+	check(getSetting('VIAL_SIZE') ~= 100,
+		'the grab survived the rebuild the first notch caused')
+	local small, large = step(50), step(400)
+	check(large > small * 3, string.format(
+		'the step scales with the size (%d at 50, %d at 400)', small, large))
+
+	-- a notch up and a notch down comes back to where it started
+	setSetting('VIAL_SIZE', 200)
+	fireTrigger('MenuMouseWheelUp')
+	fireTrigger('MenuMouseWheelDown')
+	check(math.abs(getSetting('VIAL_SIZE') - 200) <= 1,
+		'up then down returns to the start (' .. getSetting('VIAL_SIZE') .. ')')
+
+	-- Shift is the fine step, one pixel
+	setSetting('VIAL_SIZE', 200)
+	SHIFT_HELD = true
+	fireTrigger('MenuMouseWheelUp')
+	check(getSetting('VIAL_SIZE') == 201,
+		'Shift steps a single pixel (' .. getSetting('VIAL_SIZE') .. ')')
+	SHIFT_HELD = false
+
+	-- clamped at both ends rather than running away
+	setSetting('VIAL_SIZE', 600)
+	for _ = 1, 5 do fireTrigger('MenuMouseWheelUp') end
+	check(getSetting('VIAL_SIZE') == 600, 'the top of the range holds')
+	setSetting('VIAL_SIZE', 24)
+	for _ = 1, 5 do fireTrigger('MenuMouseWheelDown') end
+	check(getSetting('VIAL_SIZE') == 24, 'and so does the bottom')
+
+	-- the wheel reaches whichever widget is being held, and only that one
+	setSetting('VIAL_SIZE', 200); setSetting('RUNE_SIZE', 24)
+	drag('vialsHud', false); drag('runesHud', true)
+	fireTrigger('MenuMouseWheelUp')
+	check(getSetting('VIAL_SIZE') == 200, 'holding the runes leaves the vials alone')
+	check(getSetting('RUNE_SIZE') > 24, 'and resizes the runes')
+	drag('runesHud', false)
+	local v, r = getSetting('VIAL_SIZE'), getSetting('RUNE_SIZE')
+	fireTrigger('MenuMouseWheelUp')
+	check(getSetting('VIAL_SIZE') == v and getSetting('RUNE_SIZE') == r,
+		'holding nothing resizes nothing')
+	setSetting('VIAL_SIZE', 190); setSetting('RUNE_SIZE', 24)
+end
+
+print('=== 25. a rebuild does not cut every texture again ===')
+-- Every settings change rebuilds the tree, and the wheel is a settings change
+-- per notch. Cutting the whole set each time -- a 140-frame fill ramp among it
+-- -- is what made the wheel drag.
+do
+	setSetting('VIAL_SIZE', 190)
+	local before = textureCount()
+	for sz = 191, 200 do setSetting('VIAL_SIZE', sz) end
+	local cut = textureCount() - before
+	check(cut < 40, 'ten rebuilds cut ' .. cut .. ' textures, not hundreds')
+
+	-- a genuinely new cut still happens: a length the sheet has not been read
+	-- at before is a different sub-rect
+	local b2 = textureCount()
+	setSetting('VIAL_LENGTH', 101)
+	check(textureCount() > b2, 'a new sub-rect is still cut when one is needed')
+	setSetting('VIAL_LENGTH', 139)
+	local b3 = textureCount()
+	setSetting('VIAL_LENGTH', 101)
+	check(textureCount() == b3, 'and is reused the second time it is asked for')
+	setSetting('VIAL_LENGTH', 139)
+	setSetting('VIAL_SIZE', 190)
+end
+
+print('=== 26. the Battlespire set, both colourings ===')
+-- The two tubes are the same tube. Classic tells them apart with the artwork
+-- itself -- a warm ramp and a cool one -- and tints nothing; Vanilla replaces
+-- the ramp with the flat colours the Classic LOK vials use.
+do
+	setSetting('VIAL_STYLE', 'Battlespire')
+	setSetting('ENGY_COLOUR', 'Classic')
+
+	local h, st = findNode('engyhealth'), findNode('engystamina')
+	check(h ~= nil and st ~= nil, 'both tubes are drawn')
+	check(h.props.resource._texture ~= st.props.resource._texture,
+		'each tube draws its own artwork, not one shared sheet')
+	check(h.props.resource._texture:find('ENGY01') ~= nil,
+		'health is the warm ramp (' .. tostring(h.props.resource._texture) .. ')')
+	check(st.props.resource._texture:find('ENGY02') ~= nil,
+		'stamina is the cool one (' .. tostring(st.props.resource._texture) .. ')')
+
+	-- nothing tinted: the ramp carries the colour
+	local function white(c) return c.r == 1 and c.g == 1 and c.b == 1 end
+	check(white(h.props.color) and white(st.props.color),
+		'Classic leaves the artwork untinted')
+	check(findNode('engyliquidhealth') == nil, 'and draws no flat liquid layer')
+
+	-- the ramp advances as it drains, and only through swapped sub-rects
+	frame(1, 1, nil)
+	local full = findNode('engyhealth').props.resource._offset.y
+	frame(0.1, nil, nil)
+	local low = findNode('engyhealth').props.resource._offset.y
+	check(low > full, 'draining walks down the ramp (' .. full .. ' -> ' .. low .. ')')
+
+	-- Vanilla: a flat liquid under the empty tube's glass
+	setSetting('ENGY_COLOUR', 'Vanilla')
+	local lh = findNode('engyliquidhealth')
+	local ls = findNode('engyliquidstamina')
+	check(lh ~= nil and ls ~= nil, 'Vanilla draws a flat liquid layer')
+	check(lh.props.resource._texture:find('ENGY_liquid') ~= nil,
+		'from the generated mask, not the ramp')
+	-- the same two colours the Classic LOK vials use
+	setSetting('HEALTH_COLOR', '#B60000')
+	setSetting('STAMINA_COLOR', '#349F00')
+	check(findNode('engyliquidhealth').props.color.r > 0.6
+		and findNode('engyliquidhealth').props.color.g < 0.2,
+		'the health liquid takes the Health Liquid colour')
+	check(findNode('engyliquidstamina').props.color.g > 0.5
+		and findNode('engyliquidstamina').props.color.r < 0.4,
+		'and the stamina one takes Stamina Liquid')
+	-- it does NOT shift as it drains: only the level moves
+	frame(1, 1, nil)
+	local c1 = findNode('engyliquidhealth').props.color
+	local y1 = findNode('engyliquidhealth').props.resource._offset.y
+	frame(0.1, nil, nil)
+	local c2 = findNode('engyliquidhealth').props.color
+	local y2 = findNode('engyliquidhealth').props.resource._offset.y
+	check(c1.r == c2.r and c1.g == c2.g and c1.b == c2.b,
+		'the flat colour does not shift as it drains')
+	check(y2 > y1, 'but the level does')
+	-- the glass is the artwork's own empty frame, held still
+	local glass = findNode('engyhealth')
+	check(glass.props.resource._offset.y == 31 * 82,
+		'the glass is the empty frame of the same artwork')
+
+	-- the backing is cut to the outline, not a rectangle
+	setSetting('ENGY_SHOW_BACKING', true)
+	local b = findNode('engybackhealth')
+	check(b ~= nil, 'the backing is drawn when switched on')
+	check(b.props.resource._texture:find('ENGY_backing') ~= nil,
+		'from the enclosed-area mask')
+	local col = findNode('runeColumn')
+	-- it is the lowest layer, under the liquid and the glass
+	local vial = findNode('healthVial')
+	local pos = {}
+	for i, ch in ipairs(vial.content._items) do pos[ch.name] = i end
+	check(pos.engybackhealth < pos.engyliquidhealth,
+		'and sits under the liquid')
+	check(pos.engyliquidhealth < pos.engyhealth,
+		'which in turn sits under the glass')
+	setSetting('ENGY_SHOW_BACKING', false)
+	setSetting('ENGY_COLOUR', 'Classic')
+	setSetting('VIAL_STYLE', 'Classic')
+end
+
+print('=== 27. the fortified part, and what a drain does not do ===')
+-- A fortify genuinely gives you more capacity, so the vessel grows and your
+-- liquid is a smaller share of it; the part above base is coloured so that
+-- reads as the vessel growing rather than as a loss. A drain is the opposite
+-- case: scaling to base + modifier there would make the liquid jump UP as the
+-- maximum is taken away, so the scale holds at base instead.
+do
+	setSetting('VIAL_STYLE', 'Classic')
+	setSetting('SHOW_FORTIFY', true)
+	setSetting('FILL_SMOOTHING', 0)
+
+	-- a plain full vial
+	setStatFraction('health', 1)
+	MODULE.engineHandlers.onUpdate(0.1)
+	local fill = findNode('fillhealth')
+	local plainFull = fill.props.size.y
+	check(plainFull > 0, 'a full vial has liquid')
+	check(findNode('forthealth').props.visible == false,
+		'and nothing fortified behind it')
+
+	-- Fortify Maximum Health: base 100, modifier +100, current still 100.
+	-- The vessel now holds 200, so 100 is half of it.
+	local st = require('openmw.types').Actor.stats.dynamic.health(require('openmw.self'))
+	st.base, st.modifier, st.current = 100, 100, 100
+	MODULE.engineHandlers.onUpdate(0.1)
+	local half = findNode('fillhealth').props.size.y
+	check(math.abs(half - plainFull / 2) <= 2, string.format(
+		'a doubled maximum makes the same liquid half the vessel (%d of %d)',
+		half, plainFull))
+	check(findNode('forthealth').props.visible == false,
+		'and nothing is fortified yet, because nothing is above base')
+
+	-- A DRAIN must not do the reverse. base 100, modifier -50, current 50:
+	-- scaling to 50 would fill the vessel to the brim as the maximum is taken.
+	st.base, st.modifier, st.current = 100, -50, 50
+	MODULE.engineHandlers.onUpdate(0.1)
+	local drained = findNode('fillhealth').props.size.y
+	check(math.abs(drained - plainFull / 2) <= 2, string.format(
+		'a drained maximum leaves the liquid where it was (%d of %d)',
+		drained, plainFull))
+
+	-- now actually heal into the fortified part
+	st.base, st.modifier, st.current = 100, 100, 150
+	MODULE.engineHandlers.onUpdate(0.1)
+	local fort = findNode('forthealth')
+	check(fort.props.visible ~= false, 'healing past base shows the fortified part')
+	check(fort.props.size.y > findNode('fillhealth').props.size.y,
+		'which reaches higher than the ordinary liquid')
+	check(math.abs(findNode('fillhealth').props.size.y - plainFull / 2) <= 2,
+		'and the ordinary liquid still stops at base')
+
+	-- it is drawn UNDER the ordinary liquid, which is what makes two draws
+	-- from the same 140 cuts enough
+	local vial = findNode('healthVial')
+	local pos = {}
+	for i, ch in ipairs(vial.content._items) do pos[ch.name] = i end
+	check(pos.forthealth < pos.fillhealth, 'the fortified layer is underneath')
+
+	-- switching it off goes back to one layer
+	setSetting('SHOW_FORTIFY', false)
+	check(findNode('forthealth') == nil, 'off means the layer is not built at all')
+	setSetting('SHOW_FORTIFY', true)
+	st.base, st.modifier, st.current = 100, 0, 100
+	MODULE.engineHandlers.onUpdate(0.1)
+end
+
+print('=== 28. smoothing, and the idle flag that pays for it ===')
+do
+	setSetting('FILL_SMOOTHING', 0)
+	setStatFraction('health', 1)
+	MODULE.engineHandlers.onUpdate(0.1)
+	local full = findNode('fillhealth').props.size.y
+
+	-- off: the level is exact on the very next frame
+	setStatFraction('health', 0.2)
+	MODULE.engineHandlers.onUpdate(0.1)
+	local instant = findNode('fillhealth').props.size.y
+	check(instant < full * 0.5, 'with smoothing off the level is exact at once')
+
+	-- on: it eases, and arrives
+	setSetting('FILL_SMOOTHING', 12)
+	setStatFraction('health', 1)
+	MODULE.engineHandlers.onUpdate(0.016)
+	local first = findNode('fillhealth').props.size.y
+	check(first > instant and first < full,
+		'the first frame moves part of the way (' .. first .. ' of ' .. full .. ')')
+	for _ = 1, 400 do MODULE.engineHandlers.onUpdate(0.016) end
+	check(findNode('fillhealth').props.size.y == full,
+		'and it arrives rather than approaching forever')
+
+	-- frame-rate independence: the same elapsed time gets to the same place
+	local function travel(step, total)
+		setSetting('FILL_SMOOTHING', 12)
+		setStatFraction('health', 0)
+		MODULE.engineHandlers.onUpdate(1)
+		for _ = 1, 50 do MODULE.engineHandlers.onUpdate(1) end
+		setStatFraction('health', 1)
+		local t = 0
+		while t < total - 1e-9 do
+			MODULE.engineHandlers.onUpdate(step)
+			t = t + step
+		end
+		return findNode('fillhealth').props.size.y
+	end
+	local slow, fast = travel(1 / 30, 0.25), travel(1 / 144, 0.25)
+	check(math.abs(slow - fast) <= 2, string.format(
+		'a quarter second gets to the same place at 30fps and 144 (%d vs %d)',
+		slow, fast))
+
+	-- idle: a steady, settled HUD stops doing per-frame work
+	setSetting('LOW_WARNING', 'Off')
+	setStatFraction('health', 0.5)
+	for _ = 1, 400 do MODULE.engineHandlers.onUpdate(0.016) end
+	local beforeTex, beforeUp = textureCount(), updateCount()
+	local y = findNode('fillhealth').props.size.y
+	-- Nothing moves, so nothing is touched. The update count is the one that
+	-- matters: a level that happens to land on the same pixel row proves
+	-- nothing, but an update is a round trip to MyGUI and there should be none.
+	for _ = 1, 60 do MODULE.engineHandlers.onUpdate(0.016) end
+	check(findNode('fillhealth').props.size.y == y, 'an idle HUD holds its level')
+	check(textureCount() == beforeTex, 'and cuts nothing while idle')
+	check(updateCount() == beforeUp,
+		'and pushes nothing to MyGUI (' .. (updateCount() - beforeUp) .. ' updates)')
+
+	-- The picture is identical whether onUpdate returns early or works and
+	-- finds nothing, so the only way to see the difference is to count what it
+	-- reads. An idle frame reads the six fields the idle check itself needs
+	-- and stops; a working frame reads them all again through statPair.
+	local function readsInAFrame()
+		local r = statReadCount()
+		MODULE.engineHandlers.onUpdate(0.016)
+		return statReadCount() - r
+	end
+	-- A working frame reads every stat twice: once for the idle check and
+	-- again through statPair. An idle one returns after the first read, so it
+	-- should come in at about HALF -- not merely at "fewer", which stays true
+	-- even when the gate never fires, because a frame that finds nothing
+	-- changed still does slightly less than one that does.
+	setStatFraction('health', 0.25)
+	local busy = readsInAFrame()
+	for _ = 1, 400 do MODULE.engineHandlers.onUpdate(0.016) end
+	local settled = readsInAFrame()
+	check(settled * 2 <= busy, string.format(
+		'a settled frame returns early rather than working (%d reads vs %d)',
+		settled, busy))
+	setSetting('FILL_SMOOTHING', 0)
 end
 
 print('')

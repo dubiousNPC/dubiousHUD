@@ -69,9 +69,7 @@ Everything TimeHUD and LocationHUD expose is here, plus a **Moons** group.
 | Show data source | off | Debug: appends `engine` / `projected` / `formula` / `fixture` |
 | **Show Shade of the Revenant** | on | Adds a third line — see below |
 | Shade Display | Always | Always / Only When Active / Countdown Only |
-| Shade Anchor Month | Last Seed | |
-| Shade Anchor Day | 27 | |
-| Shade Interval | 8 | Days between occurrences |
+| Shade Offset | 0 | Shifts the eight-day cycle, in days |
 | Update Interval | 30 in-game min | Phases move once every 3 days, so this can be lazy |
 
 ### Border
@@ -88,37 +86,39 @@ four options and the same textures as TimeHUD, LocationHUD and Quickloot.
 
 ## Shade of the Revenant
 
-The third data point. Every eighth day, anchored on **27 Last Seed**:
+The third data point. **Every eighth day**, counted from the start of the game —
+the convention every other mod that tracks it uses:
 
+```lua
+if fmod(trackedVariables.daysPassed, 8) == 0 then ... end
 ```
-27 Last Seed → 4 Hearthfire → 12 → 20 → 28 → 6 Frostfall → 14 → 22 → 30 Frostfall
-```
 
-**Note it is 27 → 4 → 12, not 27 → 5 → 13.** Last Seed has 31 days, so 27 + 8 lands
-on the 4th of Hearthfire. This matches UESP's Oblivion "days passed" table exactly —
-Oblivion begins on 27 Last Seed, which is where the anchor date comes from, and the
-event there is simply `DaysPassed % 8 == 1`.
+That is the whole rule, and it is the whole configuration. There is one setting,
+**Shade Offset**, in days, default 0. It shifts the entire cycle, for a save
+whose phase differs or a module that wants it on another day; 1 to 7 are the
+other seven phases and 8 is 0 again.
 
-Anchoring to a **calendar date** rather than to `DaysPassed` is deliberate: it
-survives save transplants and console time travel, and it doesn't care when your game
-began. Both the anchor and the interval are settings if you want a different cadence.
-
-Because 365 isn't divisible by 8, **the dates don't repeat year to year** — the
-sequence slides by five days each year (365 mod 8 = 5). The first Shade of Morning
-Star falls on the 7th in 3E 427, the 2nd in 428, the 5th in 429, the 8th in 430.
-
-It's pure calendar arithmetic, so it works indoors, in inactive cells, and on engine
-builds with no moon bindings at all.
+This replaced an anchor year, an anchor month, an anchor day and an interval —
+four numbers to get right for an event that is simply "every eighth day", and
+two of them could be set to combinations the calendar does not contain (the
+anchor day went to 31 on months with 30).
 
 ```lua
 local shade = I.MoonTracker.getShade()
 -- { active = false, daysUntil = 3, date = { year = 427, month = 9, day = 4 },
---   dateString = '4 Hearthfire', interval = 8 }
+--   dateString = '4 Hearthfire', interval = 8, offset = 0 }
 
 I.MoonTracker.isShadeDay()          -- boolean
 I.MoonTracker.upcomingShades(8)     -- next 8 dates as strings
-I.MoonTracker.setShadeConfig{ ANCHOR_DAY = 1, INTERVAL_DAYS = 10 }
+I.MoonTracker.setShadeConfig{ OFFSET = 3 }
 ```
+
+The date in there is derived from the day count for the almanac to print, not
+what the test matched on. Because 365 isn't divisible by 8 the dates don't
+repeat year to year — the sequence slides by five days each year.
+
+It is a day count and some arithmetic, so it works indoors, in inactive cells,
+and on engine builds with no moon bindings at all.
 
 Fires `MoonTracker_ShadeOfTheRevenant` on the player when a Shade day begins.
 

@@ -28,6 +28,8 @@ Settings live under **dbsHUD - DBSVials**.
 
 - Click and drag either widget to move it. They move independently.
 - Click and mousewheel while dragging to resize whichever one you are holding.
+  Each notch is a fixed *proportion*, so it moves at the same apparent speed at
+  every size; hold Shift for single-pixel steps.
 
 ---
 
@@ -149,9 +151,84 @@ red. Each is a 32-frame atlas, 28 x 82 a frame, frame 0 full and frame 31
 empty, so the fill is quantised to 32 states and the texture is only swapped
 when a different frame would be drawn.
 
-The colour is in the artwork, so the health and stamina colour settings do not
-apply to this style. `dbs_ENGY_frame.png` is an outline that can go over the
-tube (**Battlespire Frame**) for when it has to read against a bright sky.
+The two ramps are not interchangeable sets to pick between — one is the health
+liquid and one is the stamina liquid, and that is what tells the tubes apart.
+`ENGY01` runs yellow to red, `ENGY02` blue to red. Nothing is tinted; the
+artwork carries its own colour.
+
+**Liquid Colour** offers the other way round:
+
+| | |
+|---|---|
+| **Classic** | The artwork as supplied. The liquid shifts through its ramp as it drains. |
+| **Vanilla** | One flat colour that does not shift, taking the same **Health Liquid** and **Stamina Liquid** colours the LOK vials use, so the two sets read alike. Tint it to anything. |
+
+Vanilla needs two things the supplied art does not contain, so
+`dev/build_engy_masks.py` generates them — both white, so they tint to anything:
+
+```
+dbs_ENGY_liquid.png    32 frames, the liquid region of each ENGY frame
+dbs_ENGY_backing.png   1 frame, the area the outline encloses
+```
+
+The liquid region is found by **difference against the atlas's own last frame**,
+which is the empty tube: whatever differs from the empty tube is liquid. Picking
+it out by colour instead would have to separate a saturated liquid from the
+glass highlights over it, and the near-empty frames are white and red — exactly
+where that fails. The glass for Vanilla is that same last frame, drawn over the
+flat liquid, so the highlights still fall where they were drawn to fall.
+
+The backing is a *row-span* fill, not a flood fill: the outline is not closed.
+Rows 3 and 4 of `dbs_ENGY_frame.png` have no outline at all and row 5 only has
+its left side, so a flood leaks out through the neck and fills the canvas. Each
+row takes the span between its leftmost and rightmost outline pixel instead, and
+a row with none inherits the one above — right for this art, because those rows
+are the straight part of the collar.
+
+**Tube Backing** then draws that shape behind the glass, which is what a
+background for this set should be: a rectangle behind a round-ended tube reads
+as a mistake. `dbs_ENGY_frame.png` goes over the top as the **Outline**.
+
+### The fortified part
+
+A Fortify Maximum genuinely gives you more capacity, so the vessel grows and the
+liquid you had is a smaller share of it. That is honest, but on its own it reads
+as a loss. So the part of the liquid above your *unfortified* maximum is drawn
+in its own colour (**Fortified Colour**, gold by default), and the smaller share
+reads as the vessel growing rather than as damage.
+
+It is not drawn as a band. A band would need a sub-rect cut from the middle of
+the tube art and there are 140 × 140 possible middles — far too many to cut and
+keep. The fortified layer is a **full** column in its own colour with the
+ordinary liquid drawn on top of it, so only the part above shows: two draws from
+the 140 cuts that already exist, and the taper at the foot stays correct in both.
+
+A drain is the opposite case and is handled by the scale rather than the colour.
+The vessel is scaled against `max(base, base + modifier)`, so a Drain Maximum
+does *not* lower the scale — scaling to `base + modifier` there would make the
+liquid jump **up** as your maximum is taken away. The vessel keeps its size and
+the headroom above the liquid is what has gone.
+
+Works on the Classic vials and on Battlespire Vanilla. Not on the Battlespire
+Classic ramp, which is one image carrying its own colour.
+
+### Smoothing, and the idle flag that pays for it
+
+**Fill Smoothing** eases the drawn level towards the real one instead of jumping,
+so a hit reads as the vial draining. The form is `1 - exp(-k·dt)`, which is
+frame-rate independent — a plain `d * 0.1` per frame moves at a speed that
+depends on the frame rate, which is why a mod tuned at 60fps looks wrong at 144.
+The test asserts that a quarter of a second gets to the same place at 30fps and
+at 144. Set it to 0 and the level is exact.
+
+The ease snaps once it is within a hair of its target, and that snap is what
+makes the whole thing affordable: an exponential approach never arrives on its
+own, so without it the HUD would work every frame forever. Once everything has
+settled, `onUpdate` returns after reading the three stats once and comparing
+them. That is the state the HUD is in for most of the game.
+
+Both are borrowed from PixelHUD, which arrived at the same discipline from the
+other direction.
 
 ### Vial length
 
@@ -193,6 +270,42 @@ rows — the same art — which is why the range starts at 63 and runs continuou
 
 ---
 
+## The settings page
+
+Eleven small groups rather than five large ones. A group *is* a storage section,
+so the grouping is the layout: anything you would change in one sitting sits
+together, and each of the three subjects gets a leading group that reads as its
+banner.
+
+```
+General                     show/hide, lock, opacity, arrangement, spacing
+Vials                       which set, size, position
+  Vials: Classic (LOK)      length, liquid colours, the tube
+  Vials: Classic Fittings   clasp, collar, bulb, dreg, metal tint
+  Vials: Battlespire (BS)   ramp, a tint per tube, frame
+Runes                       style, size, count, fill direction, position
+  Runes: Pips               everything that only applies to pips
+  Runes: Colour and Glow    rune, glow and flair tints and opacities
+Numbers                     the figures under each meter
+Low Warning                 the pulse
+Frame                       background and border
+```
+
+Nothing is in a group it is not about. The old page had twenty-three settings
+under Vials and twenty-one under Runes, with pip settings, flair settings and
+Battlespire settings in among them; most of any screenful did not apply to what
+you were actually looking at.
+
+Defaults are the author's own working configuration rather than the art's 1:1
+figures, so a fresh install looks like the screenshots. The two position
+defaults are stored as a distance from the right and bottom edges, so they land
+in the same corner on any resolution rather than off the side of a smaller one.
+
+Regrouping moves settings between storage sections, which would ordinarily put
+an existing install back on the defaults. It does not: anything a new section
+has not got yet is taken from wherever it used to live, once, before anything
+subscribes. **Rune Size** is computed from the old **Rune Column Height**.
+
 ## The runes
 
 Three styles, set by **Rune Style**.
@@ -215,6 +328,27 @@ rather than anything the mod loads.
 
 Both layers are cut per cell rather than drawn as one image. That is what lets
 the column be lengthened.
+
+#### Rune size, and one aspect ratio
+
+There used to be a **Rune Column Height** and a **Rune Column Width**, and the
+mousewheel drove the width from the width it had just rounded:
+
+```lua
+local scale = h / math.max(1, RUNE_HEIGHT or 139)
+runeSection:set('RUNE_WIDTH', math.floor((RUNE_WIDTH or 35) * scale + 0.5))
+```
+
+That compounds. Twenty notches up and twenty back does not return the column to
+where it started, and because the default pair (35 x 139) was measured off the
+*Classic* sheet, the xs runes — whose cells are 27 x 30 — were being stretched
+**2.2x wider than they were drawn** before anyone touched the wheel.
+
+Now there is one **Rune Size**: the height of a single rune. The width is
+derived from the artwork of whichever style is in use (27:30 a rune for Runes,
+70:292 for the eight bands of Classic) and is never read back, so it cannot
+drift. The column is `size x count` tall, which is what makes Rune Size and
+Rune Count independent in the same way Vial Size and Vial Length are.
 
 #### Rune length
 
@@ -340,8 +474,11 @@ The other settings in that group:
 | **Pulse Depth** | How far the pulse dims. Set it to 0 to keep the warning without the movement. |
 
 Sizing is not buried in an accessibility section because it is not a special
-case: **Vial Height**, **Vial Width**, **Rune Column Height** and **Rune Column
-Width** go from tiny to 512px, and the mousewheel gesture scales the whole set.
+case. There are two size settings and no more: **Vial Size** (24–600px) and
+**Rune Size** (4–64px per rune). Both drive their widget's width as well as its
+height, from the artwork's own proportions, so nothing can be stretched out of
+shape on the way to a size you can read — and the mousewheel gesture reaches
+both.
 
 ---
 
@@ -351,6 +488,14 @@ Width** go from tiny to 512px, and the mousewheel gesture scales the whole set.
 moved it returns without touching the UI. It allocates nothing in the common
 path: no tables, no textures, no vectors beyond the two the engine needs when a
 value has genuinely changed.
+
+Textures are cut once. A `ui.texture` is decided entirely by its path and its
+sub-rect, so the same three numbers always give the same resource; they are
+memoised on those. This matters because *every settings change rebuilds the
+tree*, and the resize wheel is a settings change per notch — the whole set,
+around 250 cuts including a 140-frame fill ramp, used to be cut again on each
+one. Ten notches of the wheel cut **2,570** textures before and fewer than
+**40** now; the test asserts it.
 
 The quantisation is the whole trick:
 
@@ -395,7 +540,7 @@ LUA=texlua dev/check_all.sh   # a LuaTeX install already carries one
 `dev/load_check.lua` stubs enough of the OpenMW API to load the mod offline,
 including live dynamic-stat accessors the tests can drive. The suite:
 
-- **293 behavioural checks** against the real module and the real widget tree.
+- **354 behavioural checks** against the real module and the real widget tree.
   `dev/test_vials.lua` deliberately re-implements none of the module's logic — a
   test that mirrors the code only ever proves the mirror is faithful. It drives
   `onUpdate` and reads the tree that was actually built.
@@ -405,6 +550,22 @@ including live dynamic-stat accessors the tests can drive. The suite:
   module builds, not asserted against a copy of the arithmetic.
 - Vial width and fitting sizes checked against Vial Length at three scales, so
   the two settings cannot quietly become one.
+- Both Battlespire colourings read off the tree: each tube draws its own ramp,
+  Classic tints nothing, Vanilla's flat colour does not shift as it drains, and
+  the backing sits under the liquid which sits under the glass.
+- A fortify and a drain driven through the real accessors, checking the vessel
+  grows for one and holds its scale for the other.
+- Smoothing checked for frame-rate independence (a quarter second at 30fps and
+  at 144 land within two pixels), for arriving rather than approaching forever,
+  and for going idle afterwards — measured by counting stat reads, because the
+  picture is identical whether onUpdate returns early or works and finds
+  nothing.
+- The resize wheel driven for real: the step scales with the size, up-then-down
+  returns to the start, Shift is a single pixel, both ends clamp, and the grab
+  survives the rebuild its own first notch causes.
+- A rebuild counted against the texture cuts it makes, so the cache cannot
+  quietly stop working.
+- The rune column's aspect read off the tree at five sizes in both styles.
 - The xs column checked at five lengths for cell count, contiguity, a rune
   keeping its height, the eight shapes repeating, and the readout stepping in
   *N*ths.
@@ -417,7 +578,13 @@ them, setting the clasp overlap to zero, letting the fill travel run under the
 collar, floating the collar off the tube, rounding the rune slices so they open
 a one-pixel gap, shrinking the runes to fit a longer column into the same
 height, tinting both dregs the same, taking the vial's
-scale from its shortened height instead of the full art, putting both halos on one rune,
+scale from its shortened height instead of the full art, putting the drag flag
+back on the widget where a rebuild wipes it, dropping the texture cache,
+stepping the wheel by a fixed number of pixels, giving both Battlespire tubes
+one ramp, letting the Vanilla colour shift as it drains, drawing the fortified
+layer over the liquid instead of under it, scaling the vessel to base + modifier
+so a drain makes the liquid rise, easing by a fixed fraction per frame instead
+of by elapsed time, dropping the snap so the ease never arrives, subdividing the rune column instead of extending it, putting both halos on one rune,
 swapping the thin and thick halos, showing the flair under spent runes,
 stopping the flash from decaying, and interleaving the flair with the halos
 instead of keeping it behind them all each make the suite fail.

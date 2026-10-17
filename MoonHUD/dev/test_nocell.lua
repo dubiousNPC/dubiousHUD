@@ -39,3 +39,16 @@ check(T2.interface.getStatus().engineAvailable == false, 'absent binding reporte
 
 print(string.format('  %d checks, %d failures', checks, fails))
 if fails > 0 then error('tracker failures') end
+
+print('=== the periodic check runs without raising ===')
+-- Everything behind time.runRepeatedly was unreachable from every suite, so a
+-- read of `interface` from above its own declaration -- which resolves to a nil
+-- GLOBAL rather than the local -- threw on every firing, took the Shade event
+-- with it, and spammed the log, while 584 checks elsewhere passed.
+do
+	local fired = fireRepeatedly()
+	check(fired > 0, 'something is registered on the repeating timer')
+	fireRepeatedly()
+	check(true, 'and firing it twice raises nothing')
+end
+

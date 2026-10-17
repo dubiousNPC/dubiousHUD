@@ -57,6 +57,7 @@ end
 
 -- Records everything the mod registers so we can assert on it afterwards.
 local record = {
+	repeated = {},
 	groups = {}, pages = {}, textures = {}, subscriptions = 0,
 	triggers = {}, warnings = {}, bundledUsed = {}, renderers = {},
 	-- Every ui.create result, in creation order. The widgets themselves are
@@ -468,7 +469,14 @@ stubs['openmw.camera'] = { getYaw = function() return 0 end, getPitch = function
 stubs['openmw_aux.time'] = {
 	second = 1, minute = 60, hour = 3600, day = 86400,
 	GameTime = 'GameTime', SimulationTime = 'SimulationTime',
-	runRepeatedly = function() return function() end end,
+	-- The callback is kept so a test can fire the periodic check. Discarding
+	-- it meant everything behind the timer -- phase-change events, the Shade
+	-- check -- was never executed by any test, which is how a nil deref in
+	-- there survived a 584-check suite.
+	runRepeatedly = function(fn, _)
+		record.repeated[#record.repeated + 1] = fn
+		return function() end
+	end,
 }
 
 stubs['openmw_aux.ui'] = {
@@ -702,6 +710,12 @@ end
 -- API_SCRIPT=<path> runs a Lua file after loading, with the stubs in place and
 -- the loaded modules' interfaces available as _G.LOADED. Lets the real interface
 -- be driven without launching the game.
+--- Fire everything registered with time.runRepeatedly, as the clock would.
+function _G.fireRepeatedly()
+	for _, fn in ipairs(record.repeated) do fn() end
+	return #record.repeated
+end
+
 local apiScript = os.getenv('API_SCRIPT')
 if apiScript then
 	local fn, err = loadfile(apiScript)

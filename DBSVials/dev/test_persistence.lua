@@ -4,13 +4,22 @@ local storage = require('openmw.storage')
 local fails, checks = 0, 0
 local function check(c,m) checks=checks+1; if not c then fails=fails+1; print('  FAIL: '..m) end end
 
-local groups = {
-  SettingsDBSVialsGeneral = { 'HUD_LOCK', 'HUD_DISPLAY', 'SPACING' },
-  SettingsDBSVialsVials   = { 'VIAL_SIZE', 'VIAL_X_POS', 'VIAL_Y_POS' },
-  SettingsDBSVialsRunes   = { 'RUNE_HEIGHT', 'RUNE_X_POS', 'RUNE_Y_POS' },
-  SettingsDBSVialsAccess  = { 'SHOW_NUMBERS', 'LOW_WARNING' },
-  SettingsDBSVialsFrame   = { 'HUD_BACKGROUND', 'HUD_PADDING' },
+-- Keys, not sections: sectionOf() looks each one up in what the mod actually
+-- registered, so regrouping the settings page cannot silently turn these writes
+-- into writes to a section nobody reads.
+local WATCHED = {
+  'HUD_LOCK', 'HUD_DISPLAY', 'SPACING',
+  'VIAL_SIZE', 'VIAL_X_POS', 'VIAL_Y_POS', 'VIAL_LENGTH',
+  'RUNE_SIZE', 'RUNE_X_POS', 'RUNE_Y_POS', 'RUNE_LENGTH',
+  'SHOW_NUMBERS', 'LOW_WARNING',
+  'HUD_BACKGROUND', 'HUD_PADDING',
 }
+local groups = {}
+for _, k in ipairs(WATCHED) do
+  local g = sectionOf(k)
+  groups[g] = groups[g] or {}
+  table.insert(groups[g], k)
+end
 -- snapshot everything the mod thinks it has, right after load
 local before = {}
 for g, keys in pairs(groups) do
@@ -20,15 +29,19 @@ end
 
 print('=== 1. startup does not write over stored values ===')
 -- give every key a distinctly non-default value, as a returning player would have
-local marked = {
-  SettingsDBSVialsGeneral = { HUD_LOCK = true, HUD_DISPLAY = 'Hide on Interface', SPACING = 31 },
-  SettingsDBSVialsVials   = { VIAL_SIZE = 333, VIAL_X_POS = 271, VIAL_Y_POS = 143 },
-  SettingsDBSVialsRunes   = { RUNE_HEIGHT = 222, RUNE_X_POS = 701, RUNE_Y_POS = 155 },
-  SettingsDBSVialsAccess  = { SHOW_NUMBERS = true, LOW_WARNING = 'All three' },
-  SettingsDBSVialsFrame   = { HUD_BACKGROUND = true, HUD_PADDING = 17 },
+local VALUES = {
+  HUD_LOCK = true, HUD_DISPLAY = 'Hide on Interface', SPACING = 31,
+  VIAL_SIZE = 333, VIAL_X_POS = 271, VIAL_Y_POS = 143, VIAL_LENGTH = 97,
+  RUNE_SIZE = 29, RUNE_X_POS = 701, RUNE_Y_POS = 155, RUNE_LENGTH = 16,
+  SHOW_NUMBERS = true, LOW_WARNING = 'All three',
+  HUD_BACKGROUND = true, HUD_PADDING = 17,
 }
-for g, kv in pairs(marked) do
-  for k, v in pairs(kv) do storage.playerSection(g):set(k, v) end
+local marked = {}
+for k, v in pairs(VALUES) do
+  local g = sectionOf(k)
+  marked[g] = marked[g] or {}
+  marked[g][k] = v
+  storage.playerSection(g):set(k, v)
 end
 
 -- now do what a new session does: run the lifecycle handlers again

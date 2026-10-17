@@ -207,14 +207,6 @@ settingsTemplate[key] = {
 			argument = { presetColors = presetColors },
 		},
 		{
-			key = 'BACKGROUND_ALPHA',
-			name = 'Background Opacity',
-			description = '0 to 1. Default 0.5.',
-			renderer = 'number',
-			default = 0.5,
-			argument = { min = 0, max = 1 },
-		},
-		{
 			key = 'TEXT_ALIGNMENT',
 			name = 'Alignment',
 			description = 'Also sets which corner the widget grows from.',
@@ -368,7 +360,7 @@ settingsTemplate[key] = {
 		{
 			key = 'SHOW_SHADE',
 			name = 'Show Shade of the Revenant',
-			description = 'Adds a third line: every eighth day from 27 Last Seed.\nSequence is 27 Last Seed, 4 Hearthfire, 12, 20, 28, 6 Frostfall...\nDate-driven, so it works indoors too.',
+			description = 'Adds a third line. Every eighth day, counted from the start\nof the game the way other mods count it; the offset below\nshifts the cycle if your save sits on a different phase.\nDate-driven, so it works indoors too.',
 			renderer = 'checkbox',
 			default = true,
 		},
@@ -384,35 +376,13 @@ settingsTemplate[key] = {
 			},
 		},
 		{
-			key = 'SHADE_ANCHOR_MONTH',
-			name = 'Shade Anchor Month',
-			description = 'The month the cycle is counted from. Default Last Seed.',
-			renderer = 'select',
-			default = 'Last Seed',
-			argument = {
-				disabled = false, l10n = 'none',
-				items = { 'Morning Star', "Sun's Dawn", 'First Seed', "Rain's Hand",
-				          'Second Seed', 'Mid Year', "Sun's Height", 'Last Seed',
-				          'Hearthfire', 'Frost Fall', "Sun's Dusk", 'Evening Star' },
-			},
-		},
-		{
-			key = 'SHADE_ANCHOR_DAY',
-			name = 'Shade Anchor Day',
-			description = 'Day of that month. Default 27.',
+			key = 'SHADE_OFFSET',
+			name = 'Shade Offset',
+			description = 'Shifts the whole eight-day cycle, in days. 0 is the usual\nconvention -- every eighth day counted from the start of the\ngame, which is what other mods that track it use.\nAnything from 1 to 7 is one of the other seven phases; 8 is\nthe same as 0 again.',
 			renderer = 'number',
 			integer = true,
-			default = 27,
-			argument = { min = 1, max = 31 },
-		},
-		{
-			key = 'SHADE_INTERVAL',
-			name = 'Shade Interval',
-			description = 'Days between occurrences. Default 8.',
-			renderer = 'number',
-			integer = true,
-			default = 8,
-			argument = { min = 1, max = 365 },
+			default = 0,
+			argument = { min = 0, max = 7 },
 		},
 		{
 			key = 'UPDATE_INTERVAL',
@@ -627,6 +597,9 @@ for _, template in pairs(settingsTemplate) do
 			CIRCLE_BORDER = true,
 			CIRCLE_SIZE = true, CIRCLE_TEXTURE = true, CIRCLE_BORDER_TEXTURE = true,
 			TRIANGLE_SPREAD = true, BACKGROUND_TINT = true, CIRCLE_BORDER_COLOR = true,
+			-- the background's alpha is baked in when the image is built, so
+			-- changing it has to build the image again
+			BACKGROUND_ALPHA = true,
 		}
 		if setting == nil or REBUILD[setting] then
 			if createMoonHud then createMoonHud() end

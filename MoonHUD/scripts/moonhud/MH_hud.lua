@@ -14,7 +14,7 @@ local async   = require('openmw.async')
 local storage = require('openmw.storage')
 local input   = require('openmw.input')
 local types   = require('openmw.types')
-self    = require('openmw.self')
+local self = require('openmw.self')
 local time    = require('openmw_aux.time')
 local I       = require('openmw.interfaces')
 local v2      = util.vector2
@@ -28,6 +28,10 @@ local borderTemplates = require('scripts.moonhud.MH_makeborder')
 
 local generalSection    = storage.playerSection('Settings' .. MODNAME .. 'General')
 local appearanceSection = storage.playerSection('Settings' .. MODNAME .. 'Appearance')
+-- Background Opacity is registered in the Panel group, so it is the Panel
+-- section that has to be written. It used to be written to Appearance, where
+-- nothing reads it, and the Shift+wheel gesture silently did nothing.
+local panelSection      = storage.playerSection('Settings' .. MODNAME .. 'Panel')
 
 require('scripts.moonhud.MH_settings')
 
@@ -116,15 +120,10 @@ local function textElement(name, size)
 	}
 end
 
-local MONTH_INDEX = {}
-for i, n in ipairs(C.MONTH_NAMES) do MONTH_INDEX[n] = i end
-
 local function syncShadeConfig()
 	if not I.MoonTracker or not I.MoonTracker.setShadeConfig then return end
 	I.MoonTracker.setShadeConfig {
-		ANCHOR_MONTH  = MONTH_INDEX[SHADE_ANCHOR_MONTH] or C.SHADE.ANCHOR_MONTH,
-		ANCHOR_DAY    = SHADE_ANCHOR_DAY or C.SHADE.ANCHOR_DAY,
-		INTERVAL_DAYS = SHADE_INTERVAL or C.SHADE.INTERVAL_DAYS,
+		OFFSET = SHADE_OFFSET or C.SHADE.OFFSET,
 	}
 end
 
@@ -660,8 +659,13 @@ function refreshUiVisibility()
 		visible = false
 	end
 
-	moonHud.layout.props.visible = visible
-	moonHud:update()
+	-- Guarded, as BSCompass does it. refreshUiVisibility is reached from
+	-- onFrame, from the tail of every display update and from ToggleHUD, so an
+	-- unconditional update is a MyGUI round trip per frame for nothing.
+	if moonHud.layout.props.visible ~= visible then
+		moonHud.layout.props.visible = visible
+		moonHud:update()
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -733,7 +737,7 @@ if input.triggers['MenuMouseWheelUp'] then
 	input.registerTriggerHandler('MenuMouseWheelUp', async:callback(function()
 		if moonHud and moonHud.layout.userData and moonHud.layout.userData.isDragging then
 			if input.isShiftPressed() then
-				appearanceSection:set('BACKGROUND_ALPHA', math.min(1, BACKGROUND_ALPHA + 0.1))
+				panelSection:set('BACKGROUND_ALPHA', math.min(1, BACKGROUND_ALPHA + 0.1))
 			else
 				appearanceSection:set('FONT_SIZE', FONT_SIZE + 1)
 			end
@@ -744,7 +748,7 @@ if input.triggers['MenuMouseWheelDown'] then
 	input.registerTriggerHandler('MenuMouseWheelDown', async:callback(function()
 		if moonHud and moonHud.layout.userData and moonHud.layout.userData.isDragging then
 			if input.isShiftPressed() then
-				appearanceSection:set('BACKGROUND_ALPHA', math.max(0, BACKGROUND_ALPHA - 0.1))
+				panelSection:set('BACKGROUND_ALPHA', math.max(0, BACKGROUND_ALPHA - 0.1))
 			else
 				appearanceSection:set('FONT_SIZE', math.max(5, FONT_SIZE - 1))
 			end

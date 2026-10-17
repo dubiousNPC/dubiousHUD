@@ -57,8 +57,10 @@ end
 
 -- Records everything the mod registers so we can assert on it afterwards.
 local record = {
+	updates = 0,
 	groups = {}, pages = {}, textures = {}, subscriptions = 0,
 	triggers = {}, warnings = {}, bundledUsed = {}, renderers = {},
+	triggerHandlers = {},
 	-- Every ui.create result, in creation order. The widgets themselves are
 	-- locals inside the mod, so this is the only handle the check has on the
 	-- tree that was actually built.
@@ -191,7 +193,10 @@ stubs['openmw.ui'] = {
 	create = function(layout)
 		local e = { layout = layout }
 		record.elements[#record.elements + 1] = e
-		function e:update() end
+		-- Counted: an update is a round trip to MyGUI, and the whole point of
+		-- quantising and of the idle flag is that an unchanged HUD makes none.
+		-- A test that only reads positions cannot see work being done twice.
+		function e:update() record.updates = record.updates + 1 end
 		-- A destroyed element has to stay destroyed, or findNode hands a test
 		-- the tree from before the last rebuild and every assertion after that
 		-- is made against a widget the game can no longer see.
@@ -385,10 +390,17 @@ stubs['openmw.ambient'] = { playSound = function() end }
 
 stubs['openmw.input'] = {
 	triggers = { MenuMouseWheelUp = true, MenuMouseWheelDown = true, ToggleHUD = true },
-	registerTriggerHandler = function(name, _)
+	registerTriggerHandler = function(name, cb)
+		-- The callback is kept so a test can pull the trigger. Recording only
+		-- the name proves it was registered and nothing about what it does.
+		record.triggerHandlers[name] = record.triggerHandlers[name] or {}
+		table.insert(record.triggerHandlers[name], cb)
 		record.triggers[#record.triggers + 1] = name
 	end,
-	isShiftPressed = function() return false end,
+	isShiftPressed = function() return SHIFT_HELD == true end,
+	-- Default held: a test that drives the drag gesture should not have the
+	-- stuck-drag guard pull the flag out from under it on the next frame.
+	isMouseButtonPressed = function(b) return MOUSE_HELD ~= false and b == 1 end,
 	isCtrlPressed = function() return false end,
 	isAltPressed = function() return false end,
 	getKeyName = function() return 'K' end,
@@ -433,12 +445,23 @@ end
 
 -- The mod resolves these once at load and then reads .current every frame, so
 -- the stub has to hand back a live view rather than a snapshot.
+-- Reads are counted. It is the only way to see from outside whether onUpdate
+-- did its work or returned early, and "returned early" is the entire claim the
+-- idle flag makes -- the picture is identical either way, so a test that only
+-- reads the widget tree cannot tell the two apart.
+local statReads = 0
+
 local function statAccessor(name)
 	return setmetatable({}, {
-		__index = function(_, k) return STUB_STATS[name][k] end,
+		__index = function(_, k)
+			statReads = statReads + 1
+			return STUB_STATS[name][k]
+		end,
 		__newindex = function(_, k, v) STUB_STATS[name][k] = v end,
 	})
 end
+
+function _G.statReadCount() return statReads end
 
 stubs['openmw.types'] = {
 	Player = {
@@ -697,6 +720,52 @@ function collectNodes(prefix)
 		if n.name and n.name:sub(1, #prefix) == prefix then out[n.name] = n end
 	end)
 	return out
+end
+
+-- Which group a setting was registered in. Two uses: a test can write a setting
+-- without hard-coding the section, so regrouping the page does not quietly turn
+-- its writes into no-ops; and registering the same key in two groups is caught
+-- here rather than in play, where one global ends up fed by two sections and
+-- which one wins depends on pairs() order.
+local SECTION_OF = {}
+for _, g in ipairs(record.groups) do
+	for _, e in ipairs(g.settings or {}) do
+		if SECTION_OF[e.key] then
+			failures = failures + 1
+			print('  DUPLICATE SETTING: ' .. e.key .. ' is registered in both '
+				.. SECTION_OF[e.key] .. ' and ' .. g.key
+				.. ' -- one global, two sections, undefined winner')
+		else
+			SECTION_OF[e.key] = g.key
+		end
+	end
+end
+
+--- Section a setting lives in, by name. Errors rather than returning nil: a
+--- test that writes to the wrong section passes by doing nothing.
+function _G.sectionOf(key)
+	local sec = SECTION_OF[key]
+	if not sec then error('no group registers the setting ' .. tostring(key), 2) end
+	return sec
+end
+
+--- Fire an input trigger, as the engine would.
+function _G.fireTrigger(name)
+	local list = record.triggerHandlers[name]
+	if not list or #list == 0 then error('no handler for trigger ' .. name, 2) end
+	for _, cb in ipairs(list) do cb() end
+end
+
+--- How many times a widget has been pushed back to MyGUI.
+function _G.updateCount() return record.updates end
+
+--- How many ui.texture cuts have been made in this run. A rebuild that cuts the
+--- whole set again shows up here and nowhere else.
+function _G.textureCount() return #record.textures end
+
+--- Write a setting without naming its group.
+function _G.setSetting(key, value)
+	stubs['openmw.storage'].playerSection(_G.sectionOf(key)):set(key, value)
 end
 
 -- API_SCRIPT=<path> runs a Lua file after loading, with the stubs in place and

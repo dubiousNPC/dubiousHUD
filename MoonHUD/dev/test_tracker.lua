@@ -297,60 +297,52 @@ end
 check(rt == 0, 'absoluteDay/dateFromAbsoluteDay round-trip over 4 years, ' .. rt .. ' bad')
 
 print('=== 11. Shade of the Revenant ===')
--- The published sequence, from UESP's Oblivion days-passed table.
-local EXPECTED = {
-	{ 8, 27 }, { 9, 4 }, { 9, 12 }, { 9, 20 }, { 9, 28 },
-	{ 10, 6 }, { 10, 14 }, { 10, 22 }, { 10, 30 },
-}
-for i, e in ipairs(EXPECTED) do
-	check(C.isShadeDay(427, e[1], e[2]),
-		string.format('%d %s 427 is a Shade day', e[2], C.MONTH_NAMES[e[1]]))
-end
--- and the day either side of each is not
-for _, e in ipairs(EXPECTED) do
-	local a = C.absoluteDay(427, e[1], e[2])
-	local y1, m1, d1 = C.dateFromAbsoluteDay(a + 1)
-	check(not C.isShadeDay(y1, m1, d1), 'day after a Shade is not a Shade')
-end
--- the common misremembering
-check(not C.isShadeDay(427, 9, 5), '5 Hearthfire is NOT a Shade day (the 27/05/13 sequence is wrong)')
-check(not C.isShadeDay(427, 9, 13), '13 Hearthfire is NOT a Shade day')
-
--- exactly one in eight days, over three years
-local hits = 0
-for a = C.absoluteDay(427, 1, 1), C.absoluteDay(429, 12, 31) do
-	local yy, mm, dd = C.dateFromAbsoluteDay(a)
-	if C.isShadeDay(yy, mm, dd) then hits = hits + 1 end
-end
-local span = C.absoluteDay(429, 12, 31) - C.absoluteDay(427, 1, 1) + 1
-print(string.format('  %d Shade days in %d (1 in %.2f)', hits, span, span / hits))
-check(math.abs(span / hits - 8) < 0.02, 'exactly one day in eight')
-
--- daysUntilShade and nextShadeDate agree with isShadeDay everywhere
-local bad = 0
-for a = C.absoluteDay(427, 1, 1), C.absoluteDay(428, 12, 31) do
-	local yy, mm, dd = C.dateFromAbsoluteDay(a)
-	local n = C.daysUntilShade(yy, mm, dd)
-	local ny, nm, nd = C.nextShadeDate(yy, mm, dd)
-	if n < 0 or n > 7 then bad = bad + 1 end
-	if not C.isShadeDay(ny, nm, nd) then bad = bad + 1 end
-	if C.absoluteDay(ny, nm, nd) ~= a + n then bad = bad + 1 end
-	local y2, m2, d2 = C.dateFromAbsoluteDay(a + n)
-	if n > 0 and C.isShadeDay(yy, mm, dd) then bad = bad + 1 end
-end
-check(bad == 0, 'daysUntilShade / nextShadeDate consistent over 2 years, ' .. bad .. ' bad')
-
--- year boundary really does slide by five days
-local firstShadeIn = {}
-for yr = 427, 430 do
-	for a = C.absoluteDay(yr, 1, 1), C.absoluteDay(yr, 1, 31) do
-		local yy, mm, dd = C.dateFromAbsoluteDay(a)
-		if C.isShadeDay(yy, mm, dd) then firstShadeIn[yr] = dd break end
+-- Every eighth day counted from the start of the game, which is the convention
+-- every other mod that tracks it uses:  fmod(daysPassed, 8) == 0.
+do
+	for _, d in ipairs { 0, 8, 16, 64, 360, 4000 } do
+		check(C.isShadeDayIndex(d, 0),
+			'day ' .. d .. ' is a Shade day at offset 0')
 	end
+	local bad = 0
+	for d = 0, 2000 do
+		if (d % 8 == 0) ~= C.isShadeDayIndex(d, 0) then bad = bad + 1 end
+	end
+	check(bad == 0, 'matches fmod(daysPassed, 8) == 0 over 2000 days, ' .. bad .. ' bad')
+
+	-- one in eight, and never two in a row
+	local hits, run = 0, 0
+	for d = 0, 799 do
+		if C.isShadeDayIndex(d, 0) then
+			hits = hits + 1
+			run = C.isShadeDayIndex(d - 1, 0) and run + 1 or run
+		end
+	end
+	check(hits == 100, '100 Shade days in 800, got ' .. hits)
+	check(run == 0, 'never two days running')
+
+	-- the offset shifts the whole cycle and wraps at eight
+	for off = 0, 7 do
+		local first
+		for d = 0, 20 do
+			if C.isShadeDayIndex(d, off) then first = d break end
+		end
+		check(first == (off == 0 and 0 or 8 - off),
+			'offset ' .. off .. ' puts the first Shade on day ' .. tostring(first))
+	end
+	check(C.isShadeDayIndex(0, 8) == C.isShadeDayIndex(0, 0),
+		'offset 8 is offset 0 again')
+
+	-- days until agrees with the day test everywhere
+	bad = 0
+	for d = 0, 2000 do
+		local n = C.shadeDaysUntil(d, 3)
+		if n < 0 or n > 7 then bad = bad + 1 end
+		if not C.isShadeDayIndex(d + n, 3) then bad = bad + 1 end
+		if n > 0 and C.isShadeDayIndex(d, 3) then bad = bad + 1 end
+	end
+	check(bad == 0, 'shadeDaysUntil consistent over 2000 days, ' .. bad .. ' bad')
 end
-print(string.format('  first Shade of Morning Star: 427=%d 428=%d 429=%d 430=%d',
-	firstShadeIn[427], firstShadeIn[428], firstShadeIn[429], firstShadeIn[430]))
-check(firstShadeIn[427] ~= firstShadeIn[428], 'dates do not repeat annually (365 mod 8 = 5)')
 
 print('=== 12. tracker Shade interface ===')
 stubs['openmw.core'].weather.getCurrentMoons = nil
@@ -358,36 +350,39 @@ package.loaded['scripts.moonhud.MH_tracker'] = nil
 local T3 = require('scripts.moonhud.MH_tracker')
 local I3 = T3.interface
 T3.engineHandlers.onInit(nil)
--- stub day 11 == 27 Last Seed 427 (game starts on the 16th)
-SIM.gameTime = 11 * DAY + 12 * HOUR
-local sh = I3.getShade()
-check(sh ~= nil, 'getShade returned something')
-check(sh.active == true, '27 Last Seed is active, got ' .. tostring(sh and sh.active))
-check(sh.daysUntil == 0, 'daysUntil is 0 on the day')
-print('  on 27 Last Seed: active=' .. tostring(sh.active) .. ' next=' .. sh.dateString)
+do
+	-- Park the clock on a known day count. getShade counts days passed, so the
+	-- date it prints is derived rather than being what it matched on.
+	local function atDay(d) SIM.gameTime = d * DAY + 12 * HOUR end
 
-SIM.gameTime = 12 * DAY + 12 * HOUR
-sh = I3.getShade()
-check(sh.active == false and sh.daysUntil == 7, '28 Last Seed: 7 days to go, got ' .. sh.daysUntil)
-check(sh.dateString == '4 Hearthfire', 'next Shade reads "4 Hearthfire", got ' .. sh.dateString)
-print('  on 28 Last Seed: ' .. sh.daysUntil .. ' days, next ' .. sh.dateString)
+	I3.setShadeConfig { OFFSET = 0 }
+	atDay(64)
+	local sh = I3.getShade()
+	check(sh ~= nil, 'getShade returned something')
+	check(sh.active == true, 'day 64 is a Shade day')
+	check(sh.daysUntil == 0, 'and is zero days away')
+	check(sh.interval == 8, 'the interval is eight')
 
-local up = I3.upcomingShades(4)
-print('  upcoming: ' .. table.concat(up, ', '))
-check(#up == 4, 'upcomingShades returns 4')
-check(up[1]:find('4 Hearthfire') ~= nil, 'first upcoming is 4 Hearthfire')
+	atDay(65)
+	sh = I3.getShade()
+	check(sh.active == false, 'day 65 is not')
+	check(sh.daysUntil == 7, 'and is seven days from the next, got ' .. sh.daysUntil)
+	check(type(sh.dateString) == 'string' and #sh.dateString > 0,
+		'it still names the date, for the almanac: ' .. tostring(sh.dateString))
 
--- reconfiguring the anchor
-I3.setShadeConfig { ANCHOR_DAY = 1, ANCHOR_MONTH = 1, INTERVAL_DAYS = 10 }
--- anchor 1 Morning Star 427, every 10 days -> abs must be 1 mod 10.
--- 6 Morning Star 428 is abs 371, and (371-1) %% 10 == 0.
-SIM.gameTime = (C.absoluteDay(428, 1, 6) - (MCUM[8] + 16)) * DAY + 12 * HOUR
-local rc = I3.getShade()
-print('  reconfigured (anchor 1 Morning Star, every 10): 6 Morning Star 428 active=' .. tostring(rc.active))
-check(rc.active == true, 'reconfigured anchor works')
-SIM.gameTime = (C.absoluteDay(428, 1, 7) - (MCUM[8] + 16)) * DAY + 12 * HOUR
-check(I3.getShade().active == false, 'the next day is not active under the new interval')
-I3.setShadeConfig { ANCHOR_DAY = 27, ANCHOR_MONTH = 8, INTERVAL_DAYS = 8 }
+	local up = I3.upcomingShades(4)
+	check(#up == 4, 'upcomingShades returns 4')
+	print('  upcoming from day 65: ' .. table.concat(up, ', '))
+
+	-- the offset moves it, and nothing else has to be configured
+	I3.setShadeConfig { OFFSET = 1 }
+	atDay(64)
+	check(I3.getShade().active == false, 'offset 1 takes day 64 off the cycle')
+	atDay(63)
+	check(I3.getShade().active == true, 'and puts it on day 63')
+	check(I3.getShadeConfig().OFFSET == 1, 'the offset reads back')
+	I3.setShadeConfig { OFFSET = 0 }
+end
 
 print('')
 print(string.format('%d checks, %d failures', checks, fails))

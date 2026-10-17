@@ -63,8 +63,8 @@ GLOW_PARTIAL=false,LOW_WARNING=All three
 FLAIR_ALPHA=0
 FLAIR_SPEED=2.5
 CLEAR_CLASP_TEXTURE=
-VIAL_SIZE=600,RUNE_HEIGHT=512,RUNE_WIDTH=256
-VIAL_SIZE=24,RUNE_HEIGHT=32,RUNE_WIDTH=8
+VIAL_SIZE=600,RUNE_SIZE=64
+VIAL_SIZE=24,RUNE_SIZE=4
 SHOW_CLASP=false
 SHOW_CAP=false
 SHOW_RESIDUE=true
@@ -74,7 +74,13 @@ BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 BULB_TEXTURE=textures/dbsvials/VIAL_CLEAR_GLASS.png
 VIAL_STYLE=Battlespire
 VIAL_STYLE=Battlespire,ENGY_SHOW_FRAME=true
-VIAL_STYLE=Battlespire,ENGY_SET=ENGY02 (cool)
+VIAL_STYLE=Battlespire,ENGY_COLOUR=Vanilla
+VIAL_STYLE=Battlespire,ENGY_COLOUR=Vanilla,ENGY_SHOW_BACKING=true
+VIAL_STYLE=Battlespire,ENGY_SHOW_BACKING=true,ENGY_SHOW_FRAME=true
+SHOW_FORTIFY=false
+FILL_SMOOTHING=0
+FILL_SMOOTHING=40
+VIAL_STYLE=Battlespire,SHOW_FORTIFY=false
 VIAL_LENGTH=63
 VIAL_LENGTH=100
 VIAL_LENGTH=63,SHOW_CLASP=false
@@ -82,10 +88,11 @@ VIAL_LENGTH=63,VIAL_SIZE=600
 VIAL_LENGTH=63,VIAL_SIZE=24
 VIAL_LENGTH=100,VIAL_SIZE=380
 RUNE_STYLE=Classic
+VIAL_STYLE=Battlespire,ENGY_HEALTH_TINT=,ENGY_STAMINA_TINT=
 RUNE_LENGTH=16
 RUNE_LENGTH=32
 RUNE_LENGTH=9
-RUNE_LENGTH=32,RUNE_HEIGHT=512
+RUNE_LENGTH=32,RUNE_SIZE=64
 RUNE_LENGTH=16,SHOW_NUMBERS=true
 RUNE_STYLE=Classic,RUNE_LENGTH=32
 RUNE_STYLE=Pips
@@ -132,15 +139,15 @@ for size in 24 95 190 380 600; do
 done
 
 echo "--- Classic rune slices line up at any size"
-for h in 64 139 276 512; do
-    out=$(PRESEED="RUNE_STYLE=Classic,RUNE_HEIGHT=$h" DUMP_TREE=runesHud \
+for h in 8 17 34 64; do
+    out=$(PRESEED="RUNE_STYLE=Classic,RUNE_SIZE=$h" DUMP_TREE=runesHud \
         "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1)
     n=$(echo "$out" | grep -cE '^    glowThin[1-8] ')
     last=$(echo "$out" | tail -1)
     if [ "$n" = 8 ] && [ "$last" = OK ]; then
-        printf '  height %-4s OK  (8 slices)\n' "$h"
+        printf '  rune %-4s OK  (8 slices)\n' "$h"
     else
-        printf '  height %-4s FAIL  %s slices, %s\n' "$h" "$n" "$last"
+        printf '  rune %-4s FAIL  %s slices, %s\n' "$h" "$n" "$last"
         fail=1
     fi
 done
@@ -148,15 +155,15 @@ done
 # The empty case is the one that tends to crash: nothing enabled means an empty
 # Flex, and a drag handler still pointing at it.
 echo "--- xs rune cells line up at any size"
-for h in 64 139 276 512; do
-    out=$(PRESEED="RUNE_HEIGHT=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
+for h in 8 17 34 64; do
+    out=$(PRESEED="RUNE_SIZE=$h" DUMP_TREE=runesHud "$LUA" dev/load_check.lua . \
         scripts/dbsvials/DBV_p.lua 2>&1)
     n=$(echo "$out" | grep -cE '^    xs[1-8] ')
     last=$(echo "$out" | tail -1)
     if [ "$n" = 8 ] && [ "$last" = OK ]; then
-        printf '  height %-4s OK  (8 cells)\n' "$h"
+        printf '  rune %-4s OK  (8 cells)\n' "$h"
     else
-        printf '  height %-4s FAIL  %s cells, %s\n' "$h" "$n" "$last"
+        printf '  rune %-4s FAIL  %s cells, %s\n' "$h" "$n" "$last"
         fail=1
     fi
 done
@@ -169,6 +176,33 @@ done
 # were taken from the shortened height the two would be the same setting wearing
 # different labels: the vial would hold its screen height and fatten as it got
 # shorter. Width is the tell, so width is what is read.
+# One size setting, and the width comes from the artwork. If a separate width
+# ever came back, or the aspect were taken from the wrong sheet, the column
+# would stretch -- which is exactly what it used to do on the xs set.
+echo "--- rune column keeps the art aspect at every size"
+for style in Runes Classic; do
+    bad=
+    for sz in 8 17 34 64; do
+        dims=$(PRESEED="RUNE_STYLE=$style,RUNE_SIZE=$sz" DUMP_TREE=runesHud \
+            "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1 \
+            | grep -oE 'runeColumn +size=\([0-9]+,[0-9]+' | grep -oE '[0-9]+,[0-9]+')
+        w=${dims%,*}; h=${dims#*,}
+        # Runes: one 27x30 cell per rune. Classic: 70 wide over 292 rows of
+        # content, which is eight runes' worth, so one rune is 292/8 tall.
+        want=$(awk -v s="$sz" -v st="$style" 'BEGIN{
+            aw = 27; ah = 30
+            if (st == "Classic") { aw = 70; ah = 292/8 }
+            printf "%d", int(s*aw/ah + 0.5) }')
+        [ "$w" = "$want" ] || bad="$bad size=$sz:w=$w(want $want)"
+    done
+    if [ -z "$bad" ]; then
+        printf '  %-8s OK\n' "$style"
+    else
+        printf '  %-8s FAIL %s\n' "$style" "$bad"
+        fail=1
+    fi
+done
+
 echo "--- vial width is unchanged by length"
 for size in 95 190 380; do
     ref=$(PRESEED="VIAL_SIZE=$size,VIAL_LENGTH=139" DUMP_TREE=vialsHud \

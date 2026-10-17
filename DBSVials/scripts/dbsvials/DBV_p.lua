@@ -14,6 +14,9 @@ local types   = require('openmw.types')
 local input   = require('openmw.input')
 
 local v2 = util.vector2
+-- No tint at all. Handed to anything whose artwork is meant to be shown as it
+-- was drawn, so "untinted" is explicit in the call rather than a missing one.
+local WHITE = util.color.rgb(1, 1, 1)
 
 local refreshUiVisibility, UiModeChanged
 
@@ -46,6 +49,8 @@ local CAP_W, CAP_H          = 15, 19
 -- tube's own liquid column (x3..x9 of its 13) then falls on x12..x18 -- exactly
 -- where the green and red examples differ from the empty one.
 local NATURAL_W, NATURAL_H  = 40, 190
+local VIAL_SIZE_MIN         = 24
+local VIAL_SIZE_MAX         = 600
 -- Every one of these was found by searching the offset against the supplied
 -- flasks rather than reasoned about, because the tube's glass and its liquid do
 -- not share a left edge -- the glass sits one pixel left of the column it
@@ -99,11 +104,24 @@ local FILL_MAX              = FILL_ROWS
 -- frame 0 full and frame 31 empty, plus an outline that can go over it.
 local ENGY_W, ENGY_H        = 28, 82
 local ENGY_FRAMES           = 32
-local ENGY_SETS = {
-	['ENGY01 (warm)'] = 'textures/dbsvials/ENGY01.png',
-	['ENGY02 (cool)'] = 'textures/dbsvials/ENGY02.png',
+-- The two ramps are not interchangeable sets to pick between: one is the health
+-- liquid and the other is the stamina liquid, which is what tells the two tubes
+-- apart. ENGY01 runs yellow to red, ENGY02 blue to red.
+local ENGY_PATHS = {
+	health  = 'textures/dbsvials/ENGY01.png',
+	stamina = 'textures/dbsvials/ENGY02.png',
 }
 local ENGY_FRAME_PATH       = 'textures/dbsvials/dbs_ENGY_frame.png'
+-- Two masks generated from that art by dev/build_engy_masks.py, both white so
+-- they can be tinted to anything. The liquid one is the region of each frame
+-- that differs from the empty tube; the backing one is what the outline
+-- encloses, which is where a tube-shaped background goes instead of a
+-- rectangle behind a round-ended tube.
+local ENGY_LIQUID_PATH      = 'textures/dbsvials/dbs_ENGY_liquid.png'
+local ENGY_BACKING_PATH     = 'textures/dbsvials/dbs_ENGY_backing.png'
+-- The last frame is the empty tube: glass and nothing else, which is the glass
+-- layer the Vanilla colouring draws over its own flat liquid.
+local ENGY_EMPTY_FRAME      = ENGY_FRAMES - 1
 
 local TEX = {
 	fill    = 'textures/dbsvials/VIAL_FILL.png',
@@ -165,6 +183,12 @@ local RUNES_PATH            = 'textures/dbsvials/RUNES_x.png'
 -- of it per rune. KainGameRUNES_xs_empty + KainGameRUNES_xs reproduces
 -- KainGameRUNES_xs_full exactly -- 0 difference -- so a rune empties by losing
 -- its blue and leaving the outline behind, which is the whole idea.
+-- One size setting drives the rune column. It is the height of ONE rune, so
+-- Rune Length adds runes without resizing the ones already there, exactly as
+-- Vial Length adds tube without resizing the vessel.
+local RUNE_SIZE_DEFAULT     = 24
+local RUNE_SIZE_MIN         = 4
+local RUNE_SIZE_MAX         = 64
 local XS_W, XS_H            = 27, 240
 local XS_CELL               = 30
 local XS_COUNT_MAX          = 32        -- elements built once; nothing is added later
@@ -202,15 +226,31 @@ local healthStat  = types.Actor.stats.dynamic.health(self_)
 local fatigueStat = types.Actor.stats.dynamic.fatigue(self_)
 local magickaStat = types.Actor.stats.dynamic.magicka(self_)
 
---- Current value and maximum of a dynamic stat. Maximum is base + modifier, so
---- fortify and drain effects move it, matching the engine's own bars.
+--- Current value, the scale to draw against, and the unfortified maximum.
+---
+--- The three are not the same thing. The scale is max(base, base + modifier),
+--- which differs from base + modifier in the two directions for good reasons:
+---
+---   A FORTIFY raises the scale, so the vessel does hold more and your liquid
+---   is a smaller share of it. That is honest -- you really do have more
+---   capacity -- and the part above `base` is drawn in its own colour, so the
+---   smaller share reads as "the vessel grew" rather than "I lost something".
+---
+---   A DRAIN does NOT lower the scale. Scaling to base + modifier there would
+---   make the liquid jump UP as your maximum is taken away, which reads as a
+---   gain. The vessel keeps its size and the headroom above the liquid is what
+---   has gone.
 local function statPair(stat)
-	local maxv = (stat.base or 0) + (stat.modifier or 0)
+	local base = stat.base or 0
+	local eff  = base + (stat.modifier or 0)
+	local maxv = math.max(base, eff)
 	if maxv < 1 then maxv = 1 end
+	if base < 0 then base = 0 end
+	if base > maxv then base = maxv end
 	local cur = stat.current or 0
 	if cur < 0 then cur = 0 end
 	if cur > maxv then cur = maxv end
-	return cur, maxv
+	return cur, maxv, base
 end
 
 --------------------------------------------------------------------------------
@@ -218,6 +258,57 @@ end
 --------------------------------------------------------------------------------
 
 local vialsHud, runesHud                -- two independent roots
+
+-- Drag state lives here rather than on the widget. Resizing is a settings
+-- change, a settings change rebuilds the widget, and a rebuilt widget gets a
+-- fresh userData -- so the first notch of the wheel used to wipe the very flag
+-- the second notch tests, and the wheel appeared to work once and then stop.
+-- Keeping the table here and handing the SAME table to each new root means the
+-- gesture survives being rebuilt underneath itself.
+local dragState = { vialsHud = {}, runesHud = {} }
+
+--------------------------------------------------------------------------------
+-- Eased display values
+--------------------------------------------------------------------------------
+-- The fraction that gets DRAWN, which chases the real one rather than jumping
+-- to it. `1 - exp(-k*dt)` is the frame-rate-independent form: a plain
+-- `d * 0.1` per frame moves at a speed that depends on the frame rate, which is
+-- why a mod tuned at 60fps looks wrong at 144.
+--
+-- `animating` is what keeps this affordable. Once every value is within a hair
+-- of its target it snaps, the flag clears, and onUpdate goes back to the cheap
+-- quantised comparison that does nothing when nothing has moved. Without the
+-- snap an exponential approach never arrives and the HUD works forever.
+local shown = { health = nil, stamina = nil, magicka = nil }
+local animating = false
+local SNAP = 0.0005
+
+local function ease(key, target, dt)
+	local cur = shown[key]
+	if cur == nil then shown[key] = target; return target end
+	local rate = FILL_SMOOTHING or 0
+	if rate <= 0 then shown[key] = target; return target end
+	local d = target - cur
+	if math.abs(d) < SNAP then shown[key] = target; return target end
+	cur = cur + d * (1 - math.exp(-rate * dt))
+	shown[key] = cur
+	animating = true
+	return cur
+end
+
+local function dragging(hud)
+	return hud and hud.layout.userData and hud.layout.userData.isDragging
+end
+
+--- A rebuild in the middle of a drag destroys the widget that captured the
+--- mouse, so its release can go nowhere and the flag would stay set for good.
+--- One button read a frame settles it.
+local function clearStuckDrag()
+	if not input.isMouseButtonPressed then return end
+	if input.isMouseButtonPressed(1) then return end
+	for _, st in pairs(dragState) do st.isDragging = false end
+end
+
 local vialsBackground, runesBackground
 
 local parts = {
@@ -230,10 +321,18 @@ local fillTex   = {}        -- [rows] -> texture showing the bottom `rows` of th
 local glow1Tex, glow2Tex, flairTex = {}, {}, {}
 local xsBlueTex, xsEmptyTex, pipTex = {}, {}, {}
 local engyTex, engyFrameTex = {}, {}
+local engyLiquidTex, engyBackingTex = {}, nil
 local tubeLenTex
 local runeTex, glassTex, claspTex, capTex, residueTex, bulbTex, clearClaspTex
 
+-- The three stats as they were last read, for the idle check in onUpdate. The
+-- sentinel is a value no stat can hold, so the first frame after a rebuild is
+-- never mistaken for an idle one -- a rebuilt tree has everything still to draw
+-- however steady the player's health is.
+local lastRaw = { -1, -1, -1, -1, -1, -1 }
 local lastHealthRows  = -1
+local lastHealthPlain = -1
+local lastStaminaPlain = -1
 local lastStaminaRows = -1
 local lastRuneLit     = -1
 local lastRunePartial = -1
@@ -256,9 +355,28 @@ local function validPath(p)
 	return type(p) == 'string' and p ~= ''
 end
 
-local function maybeTexture(path)
+-- A ui.texture is decided entirely by its path and its sub-rect, so the same
+-- three numbers always produce the same resource. Every rebuild used to cut the
+-- whole set again -- around 250 of them, including a 140-frame fill ramp -- and
+-- a rebuild happens on every settings change, which means on every notch of the
+-- resize wheel. Cutting them once and keeping them is the difference between a
+-- wheel that drags and one that does not.
+local texCache = {}
+
+local function tex(path, ox, oy, w, h)
 	if not validPath(path) then return nil end
-	return ui.texture { path = path }
+	local key = ox and (path .. '|' .. ox .. ',' .. oy .. ',' .. w .. ',' .. h) or path
+	local t = texCache[key]
+	if t == nil then
+		t = ox and ui.texture { path = path, offset = v2(ox, oy), size = v2(w, h) }
+			or ui.texture { path = path }
+		texCache[key] = t
+	end
+	return t
+end
+
+local function maybeTexture(path)
+	return tex(path)
 end
 
 --- Tube length in art rows, and D: how far everything below the tube moves up.
@@ -276,16 +394,26 @@ local function battlespire()
 	return (VIAL_STYLE or 'Classic') == 'Battlespire'
 end
 
+--- Which of the two Battlespire colourings is in use.
+---
+--- Classic is the artwork as supplied: the liquid shifts through its own ramp
+--- as it drains -- yellow to red for health, blue to red for stamina -- and the
+--- glass is left alone, so nothing here is tinted at all.
+---
+--- Vanilla replaces the liquid with one flat colour that does not shift, taking
+--- the same two colours the Classic LOK vials use, so the two vial sets read
+--- alike. The glass comes from the empty frame of the same artwork, drawn over
+--- the flat liquid, so the tube is still the tube.
+local function engyVanilla()
+	return (ENGY_COLOUR or 'Classic') == 'Vanilla'
+end
+
 local function buildTextures()
 	-- One texture per possible fill height, cut from the bottom of the tube art
-	-- so the taper stays the right shape. 140 of them, built once.
+	-- so the taper stays the right shape. 140 of them, cut once and cached.
 	fillTex = {}
 	for h = 0, TUBE_H do
-		fillTex[h] = ui.texture {
-			path   = TEX.fill,
-			offset = v2(0, TUBE_H - h),
-			size   = v2(TUBE_W, h),
-		}
+		fillTex[h] = tex(TEX.fill, 0, TUBE_H - h, TUBE_W, h)
 	end
 
 	-- The tube, cut from the length sheet. The frame for length L starts
@@ -305,28 +433,23 @@ local function buildTextures()
 		and GLASS_TEXTURE ~= TEX.glass
 	if custom then
 		-- A custom path overrides the sheet and is taken from its own top.
-		glassTex = ui.texture {
-			path = GLASS_TEXTURE, offset = v2(0, 0), size = v2(TUBE_W, drawn),
-		}
+		glassTex = tex(GLASS_TEXTURE, 0, 0, TUBE_W, drawn)
 	else
-		glassTex = ui.texture {
-			path   = TUBE_LEN_SHEET,
-			offset = v2(0, (L - TUBE_LEN_MIN) * TUBE_H + D),
-			size   = v2(TUBE_W, drawn),
-		}
+		glassTex = tex(TUBE_LEN_SHEET, 0, (L - TUBE_LEN_MIN) * TUBE_H + D,
+			TUBE_W, drawn)
 	end
 
 	-- Battlespire: one cut per frame of the drain, and the same for the outline.
-	engyTex, engyFrameTex = {}, {}
-	local engyPath = ENGY_SETS[ENGY_SET or ''] or ENGY_SETS['ENGY01 (warm)']
+	-- One ramp per vial now, so both are cut and each vial picks its own.
+	engyTex, engyFrameTex, engyLiquidTex = { health = {}, stamina = {} }, {}, {}
 	for i = 0, ENGY_FRAMES - 1 do
-		engyTex[i] = ui.texture {
-			path = engyPath, offset = v2(0, i * ENGY_H), size = v2(ENGY_W, ENGY_H),
-		}
-		engyFrameTex[i] = ui.texture {
-			path = ENGY_FRAME_PATH, offset = v2(0, i * ENGY_H), size = v2(ENGY_W, ENGY_H),
-		}
+		local y = i * ENGY_H
+		engyTex.health[i]  = tex(ENGY_PATHS.health,  0, y, ENGY_W, ENGY_H)
+		engyTex.stamina[i] = tex(ENGY_PATHS.stamina, 0, y, ENGY_W, ENGY_H)
+		engyFrameTex[i]    = tex(ENGY_FRAME_PATH,    0, y, ENGY_W, ENGY_H)
+		engyLiquidTex[i]   = tex(ENGY_LIQUID_PATH,   0, y, ENGY_W, ENGY_H)
 	end
+	engyBackingTex = tex(ENGY_BACKING_PATH, 0, 0, ENGY_W, ENGY_H)
 
 	clearClaspTex  = maybeTexture(CLEAR_CLASP_TEXTURE)
 	claspTex   = SHOW_CLASP ~= false and maybeTexture(TEX.clasp) or nil
@@ -334,22 +457,18 @@ local function buildTextures()
 	residueTex = SHOW_RESIDUE ~= false and maybeTexture(TEX.residue) or nil
 	bulbTex    = maybeTexture(BULB_TEXTURE)
 
-	runeTex = ui.texture {
-		path   = RUNES_PATH,
-		offset = v2(0, 0),
-		size   = v2(RUNE_SHEET_W, RUNE_CONTENT_H),
-	}
+	runeTex = tex(RUNES_PATH, 0, 0, RUNE_SHEET_W, RUNE_CONTENT_H)
 	-- Both xs sheets cut into their eight even cells. The outline used to be
 	-- drawn as one whole image, which was fine while the column was always
 	-- eight runes long -- it cannot repeat, so a longer column needs it cut.
 	xsBlueTex, xsEmptyTex = {}, {}
 	for i = 1, RUNE_COUNT do
-		local off, sz = v2(0, (i - 1) * XS_CELL), v2(XS_W, XS_CELL)
-		xsBlueTex[i]  = ui.texture { path = XS_BLUE_PATH,  offset = off, size = sz }
-		xsEmptyTex[i] = ui.texture { path = XS_EMPTY_PATH, offset = off, size = sz }
+		local y = (i - 1) * XS_CELL
+		xsBlueTex[i]  = tex(XS_BLUE_PATH,  0, y, XS_W, XS_CELL)
+		xsEmptyTex[i] = tex(XS_EMPTY_PATH, 0, y, XS_W, XS_CELL)
 	end
 	pipTex = {}
-	for i = 1, 8 do pipTex[i] = ui.texture { path = PIP_PATHS[i] } end
+	for i = 1, 8 do pipTex[i] = tex(PIP_PATHS[i]) end
 
 	-- One slice per rune per sheet. The front runes stay whole: they are always
 	-- fully drawn, so there is nothing to switch and no reason to cut them.
@@ -357,11 +476,7 @@ local function buildTextures()
 	for i = 1, RUNE_COUNT do
 		local y0, y1 = RUNE_CUTS[i], RUNE_CUTS[i + 1]
 		local function slice(path)
-			return ui.texture {
-				path   = path,
-				offset = v2(0, y0),
-				size   = v2(RUNE_SHEET_W, y1 - y0),
-			}
+			return tex(path, 0, y0, RUNE_SHEET_W, y1 - y0)
 		end
 		glow1Tex[i] = slice(GLOW1_PATH)
 		glow2Tex[i] = slice(GLOW2_PATH)
@@ -470,9 +585,27 @@ local function vialMetrics()
 	return k, math.max(1, math.floor(NATURAL_W * k)), h, D
 end
 
+--- Width and height of the rune column, from one size setting.
+---
+--- There used to be two sliders and the wheel drove them together by ratio,
+--- recomputing the width from the width it had just rounded. That compounds:
+--- twenty notches up and twenty back does not return the column to where it
+--- started, and the art ends up stretched. One number and a fixed aspect
+--- cannot drift, because the width is never read back -- it is derived.
+---
+--- The aspect is the art's own. The xs sheet is 27x240 in eight 30-row cells,
+--- so a rune is 27x30; the Classic sheet is 70 wide over 292 rows of content.
+--- They are quite different shapes, which is why the aspect has to follow the
+--- style rather than being one constant.
 local function runeMetrics()
-	return math.max(8, math.floor(RUNE_WIDTH or 35)),
-	       math.max(16, math.floor(RUNE_HEIGHT or 139))
+	local size = math.max(4, math.floor(RUNE_SIZE or RUNE_SIZE_DEFAULT))
+	if runeStyle() == 'Classic' then
+		-- The Classic sheet is one drawing of eight bands, so its height is
+		-- fixed at eight runes' worth whatever the count setting says.
+		local h = size * RUNE_COUNT
+		return math.max(4, math.floor(h * RUNE_SHEET_W / RUNE_CONTENT_H + 0.5)), h
+	end
+	return math.max(4, math.floor(size * XS_W / XS_CELL + 0.5)), size * RUNE_COUNT
 end
 
 --------------------------------------------------------------------------------
@@ -523,13 +656,38 @@ local function buildVial(key, colour)
 	local p = parts[key]
 	local stack = ui.content {}
 
-	-- Battlespire: no assembly. One frame of a drain atlas, optionally with its
-	-- outline over it. The liquid's colour comes from the art, which is the
-	-- point of the set -- it ramps as it empties -- so the colour setting does
-	-- not apply here.
+	-- Battlespire: no assembly, a drain atlas. Lowest is an optional backing
+	-- cut to what the outline encloses -- a rectangle behind a round-ended tube
+	-- reads as a mistake -- then the liquid, then the outline.
 	if battlespire() then
-		p.engy = pixelImage('engy' .. key, engyTex[0], 0, 0, w, h, VIAL_TINT, 1)
-		stack:add(p.engy)
+		if ENGY_SHOW_BACKING then
+			p.engyBacking = pixelImage('engyback' .. key, engyBackingTex, 0, 0, w, h,
+				ENGY_BACKING_TINT, ENGY_BACKING_ALPHA or 1)
+			stack:add(p.engyBacking)
+		end
+		if engyVanilla() then
+			-- Flat liquid first, then the empty tube's glass over it. The glass
+			-- is the artwork's own last frame, so the highlights still fall
+			-- where they were drawn to fall.
+			if SHOW_FORTIFY ~= false then
+				p.engyFort = pixelImage('engyfort' .. key, engyLiquidTex[0],
+					0, 0, w, h, FORTIFY_TINT, 1)
+				p.engyFort.props.visible = false
+				stack:add(p.engyFort)
+			end
+			p.engyLiquid = pixelImage('engyliquid' .. key, engyLiquidTex[0],
+				0, 0, w, h, colour, 1)
+			stack:add(p.engyLiquid)
+			p.engy = pixelImage('engy' .. key, engyTex[key][ENGY_EMPTY_FRAME],
+				0, 0, w, h, GLASS_TINT, 1)
+			stack:add(p.engy)
+		else
+			-- Classic: the artwork as drawn, ramp and glass in one image and
+			-- nothing tinted. Health gets the warm ramp, stamina the cool one.
+			p.engy = pixelImage('engy' .. key, engyTex[key][0], 0, 0, w, h,
+				WHITE, 1)
+			stack:add(p.engy)
+		end
 		if ENGY_SHOW_FRAME then
 			p.engyFrame = pixelImage('engyframe' .. key, engyFrameTex[0], 0, 0, w, h,
 				FITTING_TINT, ENGY_FRAME_ALPHA or 1)
@@ -573,9 +731,19 @@ local function buildVial(key, colour)
 	p.residue = place('residue' .. key, residueTex, BASE_X, BASE_Y - D, BASE_W, BASE_H,
 		colour, RESIDUE_ALPHA or 1)
 
-	-- The liquid. Position and size are set every time the level changes, so the
-	-- figures here are only the starting state.
+	-- The liquid, in two layers. The lower one is the whole column in the
+	-- fortify colour and the upper one is the unfortified part over it, so what
+	-- shows of the lower is exactly what a fortify effect has added. With no
+	-- effect running the lower one is hidden and this is one draw, as before.
+	-- Position and size are set every time the level changes, so the figures
+	-- here are only the starting state.
 	local rows = FILL_MIN
+	if SHOW_FORTIFY ~= false then
+		p.fort = place('fort' .. key, fillTex[rows],
+			FILL_X, FILL_BOTTOM - D - rows, TUBE_W, math.max(1, rows),
+			FORTIFY_TINT, 1)
+		if p.fort then p.fort.props.visible = false end
+	end
 	p.fill = place('fill' .. key, fillTex[rows],
 		FILL_X, FILL_BOTTOM - D - rows, TUBE_W, math.max(1, rows), colour, 1)
 
@@ -779,7 +947,7 @@ local function makeRoot(name, body, section, xKey, yKey, bgOut)
 			type = ui.TYPE.Image,
 			name = name .. 'Background',
 			props = {
-				resource = ui.texture { path = 'black' },
+				resource = tex('black'),
 				relativeSize = v2(1, 1),
 				alpha = HUD_BACKGROUND and (BACKGROUND_ALPHA or 0.5) or 0,
 			},
@@ -815,7 +983,7 @@ local function makeRoot(name, body, section, xKey, yKey, bgOut)
 			alpha = HUD_OPACITY or 1,
 		},
 		content = ui.content {},
-		userData = {},
+		userData = dragState[name] or {},
 	}
 
 	-- Drag to reposition, same gesture as BSCompass, TimeHUD and ErnCompass.
@@ -914,6 +1082,8 @@ function buildVialsHud()
 
 	-- Force the next update to apply everything to the fresh tree.
 	lastHealthRows, lastStaminaRows = -1, -1
+	lastHealthPlain, lastStaminaPlain = -1, -1
+	lastRaw[1] = -1
 	lastRuneLit, lastRunePartial, lastFlair = -1, -1, -1
 	lastPulse.health, lastPulse.stamina, lastPulse.magicka = -1, -1, -1
 	lastText.health, lastText.stamina, lastText.magicka = nil, nil, nil
@@ -943,7 +1113,17 @@ function applyVialStyle()
 
 	local function styleVial(key, colour)
 		local p = parts[key]
-		if p.engy then p.engy.props.color = VIAL_TINT end
+		-- Classic leaves the artwork alone; Vanilla tints the flat liquid with
+		-- the same colour the LOK vial uses and the glass with the glass tint.
+		if p.engy then
+			p.engy.props.color = engyVanilla() and GLASS_TINT or WHITE
+		end
+		if p.engyLiquid then p.engyLiquid.props.color = colour end
+		if p.engyFort then p.engyFort.props.color = FORTIFY_TINT end
+		if p.engyBacking then
+			p.engyBacking.props.color = ENGY_BACKING_TINT
+			p.engyBacking.props.alpha = ENGY_BACKING_ALPHA or 1
+		end
 		if p.engyFrame then
 			p.engyFrame.props.color = FITTING_TINT
 			p.engyFrame.props.alpha = ENGY_FRAME_ALPHA or 1
@@ -1060,28 +1240,88 @@ end
 --- match. Both are needed: the texture is the bottom `rows` of the tube art, so
 --- the widget has to be exactly that tall and sit exactly that far up, or the
 --- art is stretched and the taper at the bottom goes wrong.
-local function setVialFill(p, rows, k, D)
-	if not p.fill then return end
-	p.fill.props.resource = fillTex[rows]
-	p.fill.props.position = v2(math.floor(FILL_X * k),
+local function placeFill(el, rows, k, D)
+	if not el then return end
+	el.props.resource = fillTex[rows]
+	el.props.position = v2(math.floor(FILL_X * k),
 		math.floor((FILL_BOTTOM - (D or 0) - rows) * k))
-	p.fill.props.size = v2(math.max(1, math.floor(TUBE_W * k)),
+	el.props.size = v2(math.max(1, math.floor(TUBE_W * k)),
 		math.max(1, math.floor(rows * k)))
 	-- An empty vessel draws no liquid at all, rather than a one-pixel sliver in
 	-- the bottom of the bulb.
-	p.fill.props.visible = rows > 0
+	el.props.visible = rows > 0
+end
+
+--- `rows` is the whole liquid column; `plain` is how much of it is unfortified.
+---
+--- The fortified part is NOT drawn as a band. A band would need a sub-rect cut
+--- from the middle of the tube art, and there are 140 x 140 possible middles --
+--- far too many to cut and keep. Instead the fortified layer is a FULL column
+--- to `rows` in its own colour, with the ordinary liquid drawn to `plain` on
+--- top of it, so only the part above shows. Two draws from the 140 cuts that
+--- already exist, and the taper at the foot stays correct in both.
+local function setVialFill(p, rows, k, D, plain)
+	plain = math.min(plain or rows, rows)
+	if p.fort then
+		if rows > plain then
+			placeFill(p.fort, rows, k, D)
+		else
+			p.fort.props.visible = false
+		end
+	end
+	placeFill(p.fill, plain, k, D)
+end
+
+--- True when nothing about the stats has moved since the last frame. Three
+--- reads and six comparisons, against a body that otherwise does three
+--- divisions, six quantisations and a walk over every rune.
+---
+--- The pulse and the flair are animations in their own right, so they are asked
+--- too: idle means nothing on screen has any reason to change, not merely that
+--- the player's health is steady.
+local function statsIdle()
+	local a, b, c = healthStat, fatigueStat, magickaStat
+	local r = lastRaw
+	if r[1] == a.current and r[2] == a.base + (a.modifier or 0)
+		and r[3] == b.current and r[4] == b.base + (b.modifier or 0)
+		and r[5] == c.current and r[6] == c.base + (c.modifier or 0) then
+		return true
+	end
+	r[1], r[2] = a.current, a.base + (a.modifier or 0)
+	r[3], r[4] = b.current, b.base + (b.modifier or 0)
+	r[5], r[6] = c.current, c.base + (c.modifier or 0)
+	return false
 end
 
 local function onUpdate(dt)
 	if not (vialsHud or runesHud) then return end
+	clearStuckDrag()
 
-	local hCur, hMax = statPair(healthStat)
-	local sCur, sMax = statPair(fatigueStat)
-	local mCur, mMax = statPair(magickaStat)
+	-- Nothing to draw and nothing moving towards being drawn: stop here. That
+	-- is the state the HUD is in for most of the game, and it is the whole
+	-- point of the snap in `ease` -- an exponential approach never arrives on
+	-- its own, so without it this would never be true again.
+	local applies = LOW_APPLIES[LOW_WARNING or 'Off'] or LOW_APPLIES['Off']
+	if statsIdle() and not animating and flairTimer <= 0
+		and next(applies) == nil then
+		return
+	end
 
-	local hFrac = hCur / hMax
-	local sFrac = sCur / sMax
-	local mFrac = mCur / mMax
+	local hCur, hMax, hBase = statPair(healthStat)
+	local sCur, sMax, sBase = statPair(fatigueStat)
+	local mCur, mMax, mBase = statPair(magickaStat)
+
+	-- The eased values are what gets drawn. With smoothing off these are the
+	-- real ones and `animating` never sets, so the cheap path is unchanged.
+	animating = false
+	local hFrac = ease('health',  hCur / hMax, dt)
+	local sFrac = ease('stamina', sCur / sMax, dt)
+	local mFrac = ease('magicka', mCur / mMax, dt)
+
+	-- The share of the column that is NOT fortified. Everything above it is
+	-- what an effect has added, and is drawn in the fortify colour.
+	local hPlain = math.min(hFrac, hBase / hMax)
+	local sPlain = math.min(sFrac, sBase / sMax)
 
 	local vialsDirty, runesDirty = false, false
 	local k, _, _, D = vialMetrics()
@@ -1094,36 +1334,64 @@ local function onUpdate(dt)
 		if battlespire() then
 			-- Quantised to the atlas: 32 states, so the texture is only swapped
 			-- when a different frame would be drawn. Frame 0 is full.
-			local function setEngy(key, frac, last)
-				local f = ENGY_FRAMES - 1 - math.floor(frac * (ENGY_FRAMES - 1) + 0.5)
-				if f == last then return last, false end
+			local function engyFrameFor(frac)
+				return ENGY_FRAMES - 1 - math.floor(frac * (ENGY_FRAMES - 1) + 0.5)
+			end
+			local function setEngy(key, frac, plainFrac, last, lastPlain)
+				local f  = engyFrameFor(frac)
+				local pf = engyFrameFor(plainFrac)
+				if f == last and pf == lastPlain then return last, lastPlain, false end
 				local p = parts[key]
-				if p.engy then p.engy.props.resource = engyTex[f] end
+				-- Vanilla can show a fortified part the same way the Classic
+				-- vials do: the whole column underneath in the fortify colour,
+				-- the unfortified part over it. The Classic ramp cannot -- it is
+				-- one image carrying its own colour -- so it just draws the
+				-- whole column, as it always has.
+				if p.engyFort then
+					p.engyFort.props.visible = pf > f
+					if pf > f then p.engyFort.props.resource = engyLiquidTex[f] end
+				end
+				if p.engyLiquid then
+					p.engyLiquid.props.resource = engyLiquidTex[pf]
+					return f, pf, true
+				end
+				-- Classic swaps the whole tube; Vanilla swaps only the flat
+				-- liquid, because its glass is one fixed frame.
+				if p.engy then p.engy.props.resource = engyTex[key][f] end
 				if p.engyFrame then p.engyFrame.props.resource = engyFrameTex[f] end
-				return f, true
+				return f, pf, true
 			end
 			if SHOW_HEALTH ~= false then
-				local f, ch = setEngy('health', hFrac, lastHealthRows)
-				lastHealthRows = f; vialsDirty = vialsDirty or ch
+				local f, pf, ch = setEngy('health', hFrac, hPlain,
+					lastHealthRows, lastHealthPlain)
+				lastHealthRows, lastHealthPlain = f, pf
+				vialsDirty = vialsDirty or ch
 			end
 			if SHOW_STAMINA ~= false then
-				local f, ch = setEngy('stamina', sFrac, lastStaminaRows)
-				lastStaminaRows = f; vialsDirty = vialsDirty or ch
+				local f, pf, ch = setEngy('stamina', sFrac, sPlain,
+					lastStaminaRows, lastStaminaPlain)
+				lastStaminaRows, lastStaminaPlain = f, pf
+				vialsDirty = vialsDirty or ch
 			end
 		else
+			-- Two quantised numbers now, the whole column and its unfortified
+			-- part, so the comparison is on both. Without a fortify effect the
+			-- second equals the first and this is the old single comparison.
 			if SHOW_HEALTH ~= false then
 				local rows = fillRowsFor(hFrac)
-				if rows ~= lastHealthRows then
-					lastHealthRows = rows
-					setVialFill(parts.health, rows, k, D)
+				local plain = fillRowsFor(hPlain)
+				if rows ~= lastHealthRows or plain ~= lastHealthPlain then
+					lastHealthRows, lastHealthPlain = rows, plain
+					setVialFill(parts.health, rows, k, D, plain)
 					vialsDirty = true
 				end
 			end
 			if SHOW_STAMINA ~= false then
 				local rows = fillRowsFor(sFrac)
-				if rows ~= lastStaminaRows then
-					lastStaminaRows = rows
-					setVialFill(parts.stamina, rows, k, D)
+				local plain = fillRowsFor(sPlain)
+				if rows ~= lastStaminaRows or plain ~= lastStaminaPlain then
+					lastStaminaRows, lastStaminaPlain = rows, plain
+					setVialFill(parts.stamina, rows, k, D, plain)
 					vialsDirty = true
 				end
 			end
@@ -1205,7 +1473,6 @@ local function onUpdate(dt)
 	end
 
 	-- --- low warning ------------------------------------------------------
-	local applies = LOW_APPLIES[LOW_WARNING or 'Off'] or LOW_APPLIES['Off']
 	if next(applies) ~= nil then
 		pulseClock = pulseClock + (dt or 0)
 		local thr = LOW_THRESHOLD or 0.25
@@ -1219,10 +1486,10 @@ local function onUpdate(dt)
 			end
 			return false
 		end
-		if pulse('health', hFrac, parts.health.fill or parts.health.engy) then
+		if pulse('health', hFrac, parts.health.fill or parts.health.engyLiquid or parts.health.engy) then
 			vialsDirty = true
 		end
-		if pulse('stamina', sFrac, parts.stamina.fill or parts.stamina.engy) then
+		if pulse('stamina', sFrac, parts.stamina.fill or parts.stamina.engyLiquid or parts.stamina.engy) then
 			vialsDirty = true
 		end
 	end
@@ -1291,26 +1558,54 @@ end
 -- Click-and-scroll while dragging. Each widget resizes on its own, because each
 -- is dragged on its own -- whichever one you are holding is the one that grows.
 
-local function resizeBy(delta)
-	if vialsHud and vialsHud.layout.userData and vialsHud.layout.userData.isDragging then
-		vialSection:set('VIAL_SIZE',
-			math.max(24, math.min(600, math.floor((VIAL_SIZE or NATURAL_H) + delta))))
+-- A fixed step in pixels cannot feel the same at both ends of a range: +6 on a
+-- 24px vial is a quarter of it, +6 on a 600px one is a rounding error, and the
+-- two widgets had different ranges on top of that. The step is a RATIO instead,
+-- so a notch moves everything by the same proportion and the two widgets behave
+-- alike. A twelfth of an octave is about 6% -- twelve notches to double.
+local WHEEL_RATIO = 2 ^ (1 / 12)
+
+--- One notch. `dir` is +1 or -1; holding Shift steps a single pixel instead,
+--- for the last bit of placement.
+local function nudge(value, dir, lo, hi, fine)
+	value = value or lo
+	local out
+	if fine then
+		out = value + dir
+	else
+		out = (dir > 0) and (value * WHEEL_RATIO) or (value / WHEEL_RATIO)
+		-- Near the bottom of a range a 6% step rounds to nothing at all, which
+		-- reads as a dead wheel. Fall back to a pixel so it always moves.
+		if math.floor(out + 0.5) == math.floor(value + 0.5) then out = value + dir end
+	end
+	out = math.floor(out + 0.5)
+	if out < lo then out = lo end
+	if out > hi then out = hi end
+	return out
+end
+
+local function resizeBy(dir)
+	local fine = input.isShiftPressed and input.isShiftPressed()
+	if dragging(vialsHud) then
+		local v = nudge(VIAL_SIZE or NATURAL_H, dir, VIAL_SIZE_MIN, VIAL_SIZE_MAX, fine)
+		-- A redundant set still fires the subscription and rebuilds the tree.
+		if v ~= VIAL_SIZE then vialSection:set('VIAL_SIZE', v) end
 		return
 	end
-	if runesHud and runesHud.layout.userData and runesHud.layout.userData.isDragging then
-		local h = math.max(32, math.min(512, math.floor((RUNE_HEIGHT or 139) + delta)))
-		local scale = h / math.max(1, RUNE_HEIGHT or 139)
-		runeSection:set('RUNE_HEIGHT', h)
-		runeSection:set('RUNE_WIDTH', math.max(8, math.min(256,
-			math.floor((RUNE_WIDTH or 35) * scale + 0.5))))
+	if dragging(runesHud) then
+		local v = nudge(RUNE_SIZE or RUNE_SIZE_DEFAULT, dir,
+			RUNE_SIZE_MIN, RUNE_SIZE_MAX, fine)
+		-- One setting, one write, one rebuild. The width follows from the art's
+		-- own aspect, so there is nothing else to keep in step.
+		if v ~= RUNE_SIZE then runeSection:set('RUNE_SIZE', v) end
 	end
 end
 
 if input.triggers['MenuMouseWheelUp'] then
-	input.registerTriggerHandler('MenuMouseWheelUp', async:callback(function() resizeBy(6) end))
+	input.registerTriggerHandler('MenuMouseWheelUp', async:callback(function() resizeBy(1) end))
 end
 if input.triggers['MenuMouseWheelDown'] then
-	input.registerTriggerHandler('MenuMouseWheelDown', async:callback(function() resizeBy(-6) end))
+	input.registerTriggerHandler('MenuMouseWheelDown', async:callback(function() resizeBy(-1) end))
 end
 
 input.registerTriggerHandler('ToggleHUD', async:callback(function()

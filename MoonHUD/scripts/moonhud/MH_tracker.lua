@@ -40,11 +40,15 @@ local saveData = {
 }
 
 local engineAvailable = nil   -- nil = untested, then true/false
+-- Declared up here, not beside the table it is assigned to. checkForChanges
+-- runs long before that point in the file and reads it; as a local declared
+-- later it resolved to a nil GLOBAL instead, so every firing of the timer threw
+-- and the Shade event never fired.
+local interface
+
 local lastShadeActive = nil
 local shadeConfig = {
-	ANCHOR_YEAR   = C.SHADE.ANCHOR_YEAR,
-	ANCHOR_MONTH  = C.SHADE.ANCHOR_MONTH,
-	ANCHOR_DAY    = C.SHADE.ANCHOR_DAY,
+	OFFSET        = C.SHADE.OFFSET,
 	INTERVAL_DAYS = C.SHADE.INTERVAL_DAYS,
 }
 local lastResult      = nil   -- cached per-frame result
@@ -299,7 +303,7 @@ local function checkForChanges()
 	end
 
 	-- Shade of the Revenant is date-driven, so check it independently of the moons.
-	local shade = interface.getShade()
+	local shade = interface.getShade()   -- forward-declared at the top of the file
 	if shade then
 		if lastShadeActive == false and shade.active then
 			self:sendEvent('MoonTracker_ShadeOfTheRevenant', { shade = shade })
@@ -311,8 +315,6 @@ end
 --------------------------------------------------------------------------------
 -- Interface
 --------------------------------------------------------------------------------
-
-local interface
 
 interface = {
 	version = C.VERSION,
@@ -397,18 +399,22 @@ interface = {
 	--- { active, daysUntil, date = {year, month, day}, dateString, todayString }
 	--- or nil if the calendar is unreadable.
 	getShade = function()
+		-- Counted in days passed, not located on the calendar. The date is
+		-- only carried along so the almanac has something to print.
+		local idx = currentDayIndex()
+		if idx == nil then return nil end
 		local y, m, d = currentDate()
 		if not y then return nil end
-		local cfg = shadeConfig
-		local until_ = C.daysUntilShade(y, m, d, cfg)
-		local ny, nm, nd = C.nextShadeDate(y, m, d, cfg)
+		local until_ = C.shadeDaysUntil(idx, shadeConfig.OFFSET)
+		local ny, nm, nd = C.dateFromAbsoluteDay(C.absoluteDay(y, m, d) + until_)
 		return {
 			active      = (until_ == 0),
 			daysUntil   = until_,
 			date        = { year = ny, month = nm, day = nd },
 			dateString  = C.formatDate(ny, nm, nd, ny ~= y),
 			todayString = C.formatDate(y, m, d, false),
-			interval    = cfg.INTERVAL_DAYS,
+			interval    = shadeConfig.INTERVAL_DAYS,
+			offset      = shadeConfig.OFFSET,
 		}
 	end,
 
@@ -427,19 +433,18 @@ interface = {
 
 	getShadeConfig = function()
 		return {
-			ANCHOR_YEAR   = shadeConfig.ANCHOR_YEAR,
-			ANCHOR_MONTH  = shadeConfig.ANCHOR_MONTH,
-			ANCHOR_DAY    = shadeConfig.ANCHOR_DAY,
+			OFFSET        = shadeConfig.OFFSET,
 			INTERVAL_DAYS = shadeConfig.INTERVAL_DAYS,
 		}
 	end,
 
 	--- The next `count` Shade dates as formatted strings. Handy for almanac items.
 	upcomingShades = function(count)
+		local idx = currentDayIndex()
 		local y, m, d = currentDate()
-		if not y then return {} end
+		if idx == nil or not y then return {} end
 		local out = {}
-		local abs = C.absoluteDay(y, m, d) + C.daysUntilShade(y, m, d, shadeConfig)
+		local abs = C.absoluteDay(y, m, d) + C.shadeDaysUntil(idx, shadeConfig.OFFSET)
 		for i = 1, (count or 8) do
 			local yy, mm, dd = C.dateFromAbsoluteDay(abs)
 			out[i] = C.formatDate(yy, mm, dd, true)

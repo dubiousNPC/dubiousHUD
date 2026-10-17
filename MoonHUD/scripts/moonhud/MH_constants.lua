@@ -283,35 +283,38 @@ end
 -- The 365-day year is not divisible by 8, so the calendar dates do NOT repeat
 -- year to year. 365 mod 8 = 5, so each year the sequence slides by five days.
 
+--- Shade of the Revenant falls every eight days.
+---
+--- It used to be pinned to a calendar anchor -- a year, a month and a day --
+--- and a configurable interval, which is four numbers to get right for an event
+--- that is simply "every eighth day". Every other mod that tracks it counts
+--- days passed and takes the remainder:
+---
+---     if fmod(daysPassed, 8) == 0 then ... end
+---
+--- So that is what this does. A single OFFSET shifts the whole cycle, for a
+--- save whose phase differs or a module that wants it on a different day; 0 is
+--- the convention above and anything in 1..7 is the other seven phases.
 M.SHADE = {
-	ANCHOR_YEAR   = 427,
-	ANCHOR_MONTH  = 8,     -- Last Seed
-	ANCHOR_DAY    = 27,
 	INTERVAL_DAYS = 8,
+	OFFSET        = 0,
 }
 
-local function shadeAnchorAbs(cfg)
-	cfg = cfg or M.SHADE
-	return M.absoluteDay(cfg.ANCHOR_YEAR or 427, cfg.ANCHOR_MONTH or 8, cfg.ANCHOR_DAY or 27)
-end
-
---- True if the given date is a Shade of the Revenant day.
-function M.isShadeDay(year, month, day, cfg)
-	local n = (cfg and cfg.INTERVAL_DAYS) or M.SHADE.INTERVAL_DAYS
-	return (M.absoluteDay(year, month, day) - shadeAnchorAbs(cfg)) % n == 0
-end
-
---- Whole days until the next Shade. 0 means today is one.
-function M.daysUntilShade(year, month, day, cfg)
-	local n = (cfg and cfg.INTERVAL_DAYS) or M.SHADE.INTERVAL_DAYS
-	local delta = (M.absoluteDay(year, month, day) - shadeAnchorAbs(cfg)) % n
+--- Days until the next Shade, from a count of days passed. 0 means today.
+function M.shadeDaysUntil(daysPassed, offset)
+	local n = M.SHADE.INTERVAL_DAYS
+	local delta = (math.floor(daysPassed) + (offset or 0)) % n
 	if delta == 0 then return 0 end
 	return n - delta
 end
 
---- Date of the next Shade on or after the given date. Returns year, month, day.
-function M.nextShadeDate(year, month, day, cfg)
-	local d = M.daysUntilShade(year, month, day, cfg)
+--- True when `daysPassed` is a Shade day.
+function M.isShadeDayIndex(daysPassed, offset)
+	return M.shadeDaysUntil(daysPassed, offset) == 0
+end
+
+function M.nextShadeDate(year, month, day, daysPassed, offset)
+	local d = M.shadeDaysUntil(daysPassed, offset)
 	return M.dateFromAbsoluteDay(M.absoluteDay(year, month, day) + d)
 end
 

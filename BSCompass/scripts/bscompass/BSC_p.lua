@@ -11,7 +11,7 @@ local storage = require('openmw.storage')
 local input   = require('openmw.input')
 local types   = require('openmw.types')
 local camera  = require('openmw.camera')
-self    = require('openmw.self')
+local self = require('openmw.self')
 local I       = require('openmw.interfaces')
 local v2      = util.vector2
 
@@ -81,6 +81,12 @@ local compassHud = nil
 local compassImage        = nil    -- the layout table, poked directly
 local tiles               = {}     -- pre-built ui.texture, 1-based
 local tileCount           = 0
+-- The two atlas figures the per-frame path needs. atlasGeometry() builds and
+-- returns a fresh eighteen-field table, and tileForHeading was calling it every
+-- sampled frame for these two scalars -- a garbage table a frame for nothing.
+-- They only change when the tiles are rebuilt, so that is where they are read.
+local tileHeadingOffset   = 0
+local tileInvert          = false
 local currentTile         = -1
 local cardinalElements    = {}     -- 'N' / 'Nfade' -> layout table
 local overlayElements     = {}     -- name -> layout table
@@ -193,6 +199,7 @@ function rebuildTiles()
 	tiles = {}
 	if not validPath(geo.path) then
 		tileCount = 0
+		tileHeadingOffset, tileInvert = 0, false
 		currentTile = -1
 		return
 	end
@@ -206,6 +213,8 @@ function rebuildTiles()
 		}
 	end
 	tileCount = count
+	tileHeadingOffset = geo.headingOffset or 0
+	tileInvert = (geo.invert == true)
 	currentTile = -1        -- force the next frame to apply a texture
 end
 
@@ -274,11 +283,10 @@ end
 local function tileForHeading(deg)
 	local n = tileCount
 	if n < 1 then return 0 end
-	local geo = atlasGeometry()
 	local step = 360 / n
-	local offset = (HEADING_OFFSET or 0) + (geo.headingOffset or 0)
+	local offset = (HEADING_OFFSET or 0) + tileHeadingOffset
 	local raw = math.floor((deg + offset) / step + 0.5)
-	local invert = (geo.invert == true)
+	local invert = tileInvert
 	if INVERT_ROTATION then invert = not invert end
 	if not invert then
 		return raw % n
