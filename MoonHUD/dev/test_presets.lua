@@ -35,12 +35,31 @@ check(atlasPath('Custom', '') == C.ATLAS_PATH, 'empty custom falls back to defau
 check(atlasPath(nil, nil) == C.ATLAS_PATH, 'nil preset falls back')
 
 print('=== background presets ===')
-check(#C.BACKGROUND_PRESETS == 3, 'three background presets')
+-- Counting them proved nothing and broke every time one was added. What matters
+-- is that each name resolves to a file that is actually there -- a preset whose
+-- texture is missing shows up in the menu and draws nothing -- and that the
+-- tiling rule puts it in the right class.
+check(#C.BACKGROUND_PRESETS > 0, 'there are background presets')
 for _, n in ipairs(C.BACKGROUND_PRESETS) do
 	local p = bgPath(n, nil)
-	print(string.format('  %-16s -> %s', n, p))
 	check(p == 'textures/moonhud/' .. n .. '.png', n .. ' resolves')
+	-- the mod root is the directory this test is run from
+	local f = io.open(p, 'rb')
+	if f == nil then
+		-- the VFS is case-insensitive, the filesystem here may not be
+		for _, alt in ipairs { p:gsub('panel_', 'Panel_'), p:gsub('Panel_', 'panel_') } do
+			f = f or io.open(alt, 'rb')
+		end
+	end
+	check(f ~= nil, n .. ' has a texture on disk')
+	if f then f:close() end
+	local tiles = C.presetTiles(n)
+	local shouldTile = n:sub(1, 8):lower() == 'panel_bg'
+	print(string.format('  %-20s -> %-44s %s', n, p, tiles and 'tiles' or 'stretches'))
+	check(tiles == shouldTile, n .. ' is classified by its prefix')
 end
+check(not C.presetTiles('Custom'), 'a custom texture is stretched')
+check(not C.presetTiles(nil), 'and so is nothing at all')
 check(bgPath('None', nil) == 'black', 'None gives flat black')
 check(bgPath('Custom', 'textures/x.png') == 'textures/x.png', 'custom honoured')
 check(bgPath('Custom', '') == 'black', 'empty custom falls back to black')

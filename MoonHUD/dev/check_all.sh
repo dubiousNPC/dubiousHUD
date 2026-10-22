@@ -41,6 +41,12 @@ for p in ATLAS_PRESET=moon_atlas ATLAS_PRESET=moon_atlas_1 ATLAS_PRESET=moon_atl
          ATLAS_PRESET=moon_atlas_3 ATLAS_PRESET=moon_atlas_4 ATLAS_PRESET=Custom \
          BACKGROUND_PRESET=None BACKGROUND_PRESET=panel_bg_stars \
          BACKGROUND_PRESET=panel_bg_stone BACKGROUND_PRESET=panel_bg_linen \
+         BACKGROUND_PRESET=panel_bg_dwrvfloor BACKGROUND_PRESET=panel_ico_stone \
+         BACKGROUND_PRESET=panel_ico_stone2 BACKGROUND_PRESET=panel_ico_dwrvt \
+         BACKGROUND_PRESET=panel_ico_dwrvcube BACKGROUND_PRESET=panel_ico_dwrvparch \
+         "BACKGROUND_PRESET=panel_ico_bsscroll,BACKGROUND_FIT=Tile" \
+         "BACKGROUND_PRESET=panel_bg_stone,BACKGROUND_FIT=Stretch" \
+         "BACKGROUND_PRESET=Custom,BACKGROUND_TEXTURE=textures/moonhud/panel_bg_stone.png" \
          "PANEL_SHAPE=Circle,LAYOUT=Triangle" "PANEL_SHAPE=Circle,LAYOUT=Vertical" \
          "PANEL_SHAPE=Rectangle,LAYOUT=Triangle Inverted" \
          "PANEL_SHAPE=None,LAYOUT=Horizontal" \

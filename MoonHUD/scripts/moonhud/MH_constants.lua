@@ -200,7 +200,25 @@ M.ATLAS_PRESETS = {
 }
 
 -- Bundled panel fills for the rectangular and circular panels.
-M.BACKGROUND_PRESETS = { 'panel_bg_stars', 'panel_bg_stone', 'panel_bg_linen' }
+--
+-- Two kinds, and the prefix says which. A `panel_bg` is a material -- stone,
+-- linen, a night sky -- drawn to repeat, so it fills a panel of any size at the
+-- size it was drawn and does not stretch out of proportion. A `panel_ico` is a
+-- single object with its own border and corners; repeating one tiles its border
+-- through the middle of the panel, so it is stretched to fit instead.
+M.BACKGROUND_PRESETS = {
+	'panel_bg_stars', 'panel_bg_stone', 'panel_bg_linen', 'panel_bg_dwrvfloor',
+	'panel_ico_stone', 'panel_ico_stone2', 'panel_ico_bsscroll',
+	'panel_ico_dwrvcube', 'panel_ico_dwrvparch', 'panel_ico_dwrvt',
+}
+
+--- Whether a bundled fill repeats or stretches, from its name.
+--- A custom path is stretched: an unknown texture is far more likely to be one
+--- picture than a material, and a stretched picture is wrong in a way you can
+--- see and fix, where a tiled one just looks like a smaller picture.
+function M.presetTiles(name)
+	return type(name) == 'string' and name:lower():sub(1, 8) == 'panel_bg'
+end
 
 --- Turn a preset name into a VFS path. Returns nil for 'Custom' or 'None'.
 function M.presetPath(name)

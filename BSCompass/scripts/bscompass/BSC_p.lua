@@ -39,6 +39,53 @@ local ATLAS_PRESETS = {
 		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
 		overlayAspect = 1,
 	},
+	-- A needle on a dial. The needle atlas is a full-canvas rotation of the
+	-- artwork it was drawn on, so `overlayScale = 100` with the anchors in the
+	-- middle lays the two back over each other exactly as drawn and there is
+	-- nothing to line up by hand.
+	['DBSpretty'] = {
+		path = 'textures/bscompass/DBSpretty_needle_360.png',
+		frames = 360, cols = 30, cell = 128,
+		backdrop = 'textures/bscompass/DBSpretty_compass.png',
+		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
+		overlayAspect = 1,
+	},
+	-- The same arrangement, and the reason the needle is cut out of its ring
+	-- rather than drawn in it: RG_compass.png is the two composed, and the
+	-- frame plus the needle reproduce it to within antialiasing.
+	--
+	-- Its star is NOT centred on its canvas -- the hub sits about thirty pixels
+	-- high in the 512 square -- which is why the atlas turns about the hub and
+	-- keeps the canvas, rather than being cropped to the needle.
+	['Redguard_Compass'] = {
+		path = 'textures/bscompass/RG_needle_360.png',
+		frames = 360, cols = 30, cell = 128,
+		backdrop = 'textures/bscompass/RG_compass_frame.png',
+		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
+		overlayAspect = 1,
+	},
+	-- The Battlespire dial in a demon frame. The frame is 149x100 with an
+	-- arched opening that is neither square nor centred: measured off the
+	-- alpha, it runs x38..135 and y30..100. The dial is centred at 58% across
+	-- and 65% down, which is the middle of that opening and not the middle of
+	-- the frame.
+	--
+	-- The scale is 45 rather than the 47 that would exactly fill the arch's 70
+	-- rows. A dial sized to fit precisely has no margin for the rounding in
+	-- layerGeometry, and at 48px it overhung the top of the arch by two rows
+	-- while looking right at every size anyone checks by eye.
+	['BSCompas_Demons'] = {
+		path = 'textures/bscompass/BSCompasAtlas_360.png',
+		frames = 360, cols = 30, cell = 88,
+		backdrop = 'textures/bscompass/PANEL_demons.png',
+		overlayAnchorX = 58, overlayAnchorY = 65, overlayScale = 45,
+		overlayAspect = 149 / 100,
+		-- PANEL_detail carries the eye positions as four single pixels; the
+		-- glow drawn from them is built by dev/build_eye_glow.py.
+		overlays = {
+			eyes = 'textures/bscompass/PANEL_demons_eyes.png',
+		},
+	},
 	['DBS_CompassARROW'] = {
 		path = 'textures/bscompass/DBS_CompassARROWAtlas.png',
 		frames = 360, cols = 30, cell = 64,
@@ -64,7 +111,14 @@ local ATLAS_PRESETS = {
 }
 
 local ATLAS_PRESET_ORDER = { 'BSCompasAtlas', 'BSCompasAtlas_360',
-                             'BSCompas_Layered_360', 'DBS_CompassARROW' }
+                             'BSCompas_Layered_360', 'BSCompas_Demons',
+                             'DBS_CompassARROW', 'DBSpretty', 'Redguard_Compass' }
+
+--- Old preset names that still have to resolve.
+--- A preset name is stored in the save, so renaming one silently drops anyone
+--- who had it selected back to the default. One line here costs nothing and
+--- means a rename is never a thing a player has to notice.
+local ATLAS_PRESET_ALIASES = { RG_Compass = 'Redguard_Compass' }
 
 local borderTemplates = require('scripts.bscompass.BSC_border')
 
@@ -114,7 +168,8 @@ end
 
 
 function atlasGeometry()
-	local preset = ATLAS_PRESETS[ATLAS_PRESET or '']
+	local name = ATLAS_PRESET or ''
+	local preset = ATLAS_PRESETS[ATLAS_PRESET_ALIASES[name] or name]
 	if preset then
 		return {
 			path = preset.path, frames = preset.frames,
@@ -757,11 +812,11 @@ return {
 		BSCompass_ClearAllOverlays = function()
 			interface.clearAllOverlays()
 		end,
-		HUDTransparencyChange = function(data)
-			if compassHud then
-				compassHud.layout.props.alpha = data.alpha
-				compassHud:update()
-			end
-		end,
+---		HUDTransparencyChange = function(data)
+---			if compassHud then
+---				compassHud.layout.props.alpha = data.alpha
+---				compassHud:update()
+---			end
+---		end,
 	},
 }

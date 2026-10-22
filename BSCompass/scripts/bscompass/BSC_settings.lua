@@ -259,13 +259,19 @@ settingsTemplate[key] = {
 				.. 'BSCompas_Layered_360  the same 360 steps split into plate,\n'
 				.. '                    needle and glass dome, so each can be\n'
 				.. '                    tinted or faded on its own\n'
+				.. 'BSCompas_Demons     the same dial set in the demon frame,\n'
+				.. '                    whose eyes can be lit by the overlay\n'
+				.. '                    below or by another mod\n'
 				.. 'DBS_CompassARROW    360 steps, arrow over the DBS corner frame\n'
+				.. 'DBSpretty           needle over the engraved dial\n'
+				.. 'Redguard_Compass    gold star over the ringed frame\n'
 				.. 'Custom              use the manual settings below',
 			renderer = R_SELECT,
 			default = 'BSCompasAtlas',
 			argument = selectArg { 'BSCompasAtlas', 'BSCompasAtlas_360',
-			                       'BSCompas_Layered_360',
-			                       'DBS_CompassARROW', 'Custom' },
+			                       'BSCompas_Layered_360', 'BSCompas_Demons',
+			                       'DBS_CompassARROW', 'DBSpretty', 'Redguard_Compass',
+			                       'Custom' },
 		},
 		{
 			key = 'ATLAS_PATH',

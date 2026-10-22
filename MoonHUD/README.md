@@ -138,15 +138,49 @@ same 8 × 3 layout, so switching is instant and needs nothing else changed.
 | `moon_atlas_4` | engraved: line art with a hatched shadow side |
 | `Custom` | use **Atlas Path (Custom)** instead |
 
-Three panel fills, under **Panel → Background Fill**:
+Ten panel fills, under **Panel → Background Fill**, in two kinds — and the
+prefix tells you which.
+
+A **`panel_bg`** is a *material*, drawn to repeat. It fills a panel of any size
+at the size it was drawn, so the grain stays the grain:
 
 | Preset | Style |
 |---|---|
-| `None` | flat black, tinted and faded by the settings below it |
-| `panel_bg_stars` | night sky — verified seamless, so it tiles at any panel size |
+| `panel_bg_stars` | night sky |
 | `panel_bg_stone` | mottled stone |
 | `panel_bg_linen` | fine woven crosshatch |
+| `panel_bg_dwrvfloor` | riveted Dwemer plate |
+
+A **`panel_ico`** is a single *object* with its own border and corners, so it is
+stretched to fit instead. Repeating one runs its border through the middle of
+the panel:
+
+| Preset | Style |
+|---|---|
+| `panel_ico_stone` | mossy block |
+| `panel_ico_stone2` | plain bordered panel |
+| `panel_ico_bsscroll` | Battlespire scroll |
+| `panel_ico_dwrvcube` | Dwemer mechanism |
+| `panel_ico_dwrvparch` | torn parchment |
+| `panel_ico_dwrvt` | Dwemer badge, triangular |
+
+| | |
+|---|---|
+| `None` | flat black, tinted and faded by the settings below it |
 | `Custom` | use **Background Path (Custom)** instead |
+
+MyGUI repeats a texture at its native size unless told otherwise, so which of
+the two a fill gets is decided by `C.presetTiles`, from the name. **Background
+Fit** overrides it: *Auto* follows the name, and *Tile* or *Stretch* force it
+for your own textures. A custom path defaults to stretching — an unknown texture
+is far more likely to be one picture than a material, and a stretched picture is
+wrong in a way you can see and fix, where a tiled one just looks like a smaller
+picture.
+
+Getting it the wrong way round is not subtle. `dev/test_presets.lua` checks that
+every listed fill resolves to a file that is **actually on disk** — a preset
+whose texture is missing appears in the menu and draws nothing — and that each
+one lands in the class its prefix implies.
 
 `moon_atlas_3` over `panel_bg_stars` is the strongest pairing if you want the
 widget to read as an orrery rather than a HUD.

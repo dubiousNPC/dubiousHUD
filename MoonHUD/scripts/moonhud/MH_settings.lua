@@ -283,11 +283,11 @@ settingsTemplate[key] = {
 			key = 'ATLAS_PRESET',
 			name = 'Moon Artwork',
 			description = 'Which bundled phase sheet to use.\n'
-				.. 'moon_atlas    soft shaded discs\n'
-				.. 'moon_atlas_1  woodcut, flat two-tone with a hard outline\n'
-				.. 'moon_atlas_2  cratered, mottled surface\n'
-				.. 'moon_atlas_3  celestial, outer halo with a ringed chart face\n'
-				.. 'moon_atlas_4  engraved, line art with a hatched shadow\n'
+				.. 'moon_atlas    concept art style\n'
+				.. 'moon_atlas_1  vanilla style\n'
+				.. 'moon_atlas_2  vanilla style, subtle shade of the revenant\n'
+				.. 'moon_atlas_3  vanilla style, high contrast\n'
+				.. 'moon_atlas_4  Milo and Fleur\n'
 				.. 'Custom        use the Atlas Path below instead',
 			renderer = R_SELECT,
 			default = 'moon_atlas',
@@ -417,15 +417,38 @@ settingsTemplate[key] = {
 		{
 			key = 'BACKGROUND_PRESET',
 			name = 'Background Fill',
-			description = 'Which bundled fill to draw behind the moons.\n'
-				.. 'None            flat black, tinted and faded below\n'
-				.. 'panel_bg_stars  night sky, tiles seamlessly\n'
-				.. 'panel_bg_stone  mottled stone\n'
-				.. 'panel_bg_linen  fine woven crosshatch\n'
-				.. 'Custom          use the Background Path below instead',
+			description = 'Which bundled fill to draw behind the moons.\n\n'
+				.. 'The panel_bg ones are materials and REPEAT, so they fill a\n'
+				.. 'panel of any size at the size they were drawn:\n'
+				.. '  panel_bg_stars      night sky\n'
+				.. '  panel_bg_stone      mottled stone\n'
+				.. '  panel_bg_linen      fine woven crosshatch\n'
+				.. '  panel_bg_dwrvfloor  riveted Dwemer plate\n\n'
+				.. 'The panel_ico ones are single objects with their own border\n'
+				.. 'and are STRETCHED to fit instead -- repeating one would run\n'
+				.. 'its border through the middle of the panel:\n'
+				.. '  panel_ico_stone     mossy block\n'
+				.. '  panel_ico_stone2    plain bordered panel\n'
+				.. '  panel_ico_bsscroll  Battlespire scroll\n'
+				.. '  panel_ico_dwrvcube  Dwemer mechanism\n'
+				.. '  panel_ico_dwrvparch torn parchment\n'
+				.. '  panel_ico_dwrvt     Dwemer badge, triangular\n\n'
+				.. 'None    flat black, tinted and faded below\n'
+				.. 'Custom  use the Background Path below instead',
 			renderer = R_SELECT,
 			default = 'None',
 			argument = selectArg(backgroundItems),
+		},
+		{
+			key = 'BACKGROUND_FIT',
+			name = 'Background Fit',
+			description = 'Auto follows the name: a panel_bg repeats, a panel_ico is\n'
+				.. 'stretched, and a custom texture is stretched.\n'
+				.. 'Override it if your own texture is a material that should\n'
+				.. 'repeat, or if you want one of the bundled ones the other way.',
+			renderer = R_SELECT,
+			default = 'Auto',
+			argument = selectArg { 'Auto', 'Tile', 'Stretch' },
 		},
 		{
 			key = 'BACKGROUND_TEXTURE',
@@ -594,6 +617,7 @@ for _, template in pairs(settingsTemplate) do
 			ATLAS_PRESET = true, ATLAS_PATH = true, ATLAS_CELL = true, ICON_SIZE = true,
 			ICON_SPACING = true, SHOW_MOON_NAMES = true, SHOW_SHADE = true,
 			PANEL_SHAPE = true, BACKGROUND_PRESET = true, BACKGROUND_TEXTURE = true,
+			BACKGROUND_FIT = true,
 			CIRCLE_BORDER = true,
 			CIRCLE_SIZE = true, CIRCLE_TEXTURE = true, CIRCLE_BORDER_TEXTURE = true,
 			TRIANGLE_SPREAD = true, BACKGROUND_TINT = true, CIRCLE_BORDER_COLOR = true,

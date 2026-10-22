@@ -32,6 +32,20 @@ last=$(echo "$out" | tail -1)
 echo "  $last"
 [ "$last" = OK ] || fail=1
 
+echo "--- the preset list in the settings matches the module"
+# Two lists, in two files, naming the same presets. They have drifted before.
+inmod=$(grep -oE "\['[A-Za-z0-9_]+'\] = \{" scripts/bscompass/BSC_p.lua \
+    | sed "s/\\['//; s/'\\] = {//" | sort)
+inset=$(sed -n "/argument = selectArg { 'BSCompasAtlas'/,/},/p" scripts/bscompass/BSC_settings.lua \
+    | grep -oE "'[A-Za-z0-9_]+'" | tr -d "'" | grep -v '^Custom$' | sort)
+if [ "$inmod" = "$inset" ]; then
+    echo "  $(echo "$inmod" | wc -l) presets, both lists agree  OK"
+else
+    echo "  FAIL: the two lists differ"
+    diff <(echo "$inmod") <(echo "$inset") | sed 's/^/    /'
+    fail=1
+fi
+
 echo "--- dev/test_overlays.lua"
 "$LUA" dev/test_overlays.lua >/tmp/bs_ov 2>&1 || fail=1
 tail -1 /tmp/bs_ov
@@ -44,9 +58,20 @@ last=$(echo "$out" | tail -1)
 echo "  $last"
 [ "$last" = OK ] || fail=1
 
+echo "--- every preset fits its frame at every size"
+out=$(API_SCRIPT=dev/test_fit.lua "$LUA" dev/load_check.lua . scripts/bscompass/BSC_p.lua 2>&1)
+echo "$out" | grep -E "checks, . failures" | sed 's/^/  /' || true
+echo "$out" | grep -E "^  FAIL" || true
+last=$(echo "$out" | tail -1); [ "$last" = OK ] || fail=1
+
 echo "--- load check, every atlas preset"
 for p in "ATLAS_PRESET=BSCompasAtlas" "ATLAS_PRESET=BSCompasAtlas_360" \
          "ATLAS_PRESET=BSCompas_Layered_360" \
+         "ATLAS_PRESET=BSCompas_Demons" \
+         "ATLAS_PRESET=BSCompas_Demons,COMPASS_SIZE=512" \
+         "ATLAS_PRESET=DBSpretty" "ATLAS_PRESET=DBSpretty,COMPASS_SIZE=512" \
+         "ATLAS_PRESET=Redguard_Compass" "ATLAS_PRESET=Redguard_Compass,COMPASS_SIZE=48" \
+         "ATLAS_PRESET=RG_Compass" \
          "ATLAS_PRESET=BSCompas_Layered_360,COMPASS_SIZE=320" \
          "ATLAS_PRESET=DBS_CompassARROW" "ATLAS_PRESET=Custom" \
          "ATLAS_PRESET=DBS_CompassARROW,COMPASS_SIZE=1024" \

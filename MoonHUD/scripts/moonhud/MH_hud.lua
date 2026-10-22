@@ -148,10 +148,26 @@ local function backgroundImage(name, sizeProps)
 	if not validPath(path) then path = 'black' end
 	local tex = ui.texture { path = path }
 
+	-- MyGUI repeats a texture at its native size unless told otherwise, so
+	-- these two decide between a material that tiles and a picture that fills.
+	-- Getting it the wrong way round is not subtle: a tiled picture shows its
+	-- own border running through the middle of the panel, and a stretched
+	-- material is the same grain at the wrong scale.
+	local tiles
+	if BACKGROUND_FIT == 'Tile' then
+		tiles = true
+	elseif BACKGROUND_FIT == 'Stretch' then
+		tiles = false
+	else
+		tiles = C.presetTiles(BACKGROUND_PRESET)
+	end
+
 	local props = {
 		resource = tex,
 		alpha = BACKGROUND_ALPHA,
 		color = BACKGROUND_TINT,
+		tileH = tiles,
+		tileV = tiles,
 	}
 	for k, v in pairs(sizeProps or {}) do props[k] = v end
 	return { type = ui.TYPE.Image, name = name, props = props }

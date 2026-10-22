@@ -149,6 +149,83 @@ The supplied `BSCompasEmpty.png` is *not* used for this, and can't be — it
 differs from the atlas frames by up to 255 in the bezel, so it was redrawn rather
 than subtracted and does not line up.
 
+### Needle-on-a-dial presets
+
+Three more presets, each a static piece of art with a needle turning on top of
+it rather than a whole compass redrawn per frame.
+
+| Preset | Needle | Backdrop |
+|---|---|---|
+| **DBSpretty** | `DBSpretty_needle_360.png` | `DBSpretty_compass.png`, the engraved dial |
+| **Redguard_Compass** | `RG_needle_360.png` | `RG_compass_frame.png`, the ringed frame |
+| **BSCompas_Demons** | `BSCompasAtlas_360.png`, the Battlespire dial | `PANEL_demons.png`, two gargoyles round an arch |
+
+The first two are built by `dev/build_needle_atlas.py` from a single drawing of
+the needle: 360 frames, 30 columns, 128px cells, 3840 × 1536.
+
+Each frame is the artwork turned about the needle's **hub**, landing back on a
+canvas the same size as the source. Two things fall out of that, both wanted:
+
+- the hub does not move between frames, so the needle **spins** rather than
+  wobbling round a small circle — the usual bug when a needle is drawn
+  off-centre;
+- the frame stays registered against the backdrop it was drawn on, so the preset
+  is `overlayScale = 100` with the anchors at the middle, and there is nothing
+  to line up by hand.
+
+That second point matters for `Redguard_Compass`, whose star is **not** centred
+on its canvas: the gem sits about seven pixels high in the 128 square.
+`RG_compass.png` is the frame and the needle already composed — frame + needle
+reproduces it to within antialiasing, which is how the hub was confirmed rather
+than guessed, at both the sizes the artwork has been drawn at.
+
+Both sources are 128 now, so the cells are 1:1 and nothing is resampled on the
+way into the sheet.
+
+`Redguard_Compass` was called `RG_Compass` for one revision. A preset name is
+stored in the save, so `ATLAS_PRESET_ALIASES` maps the old name onto the new one
+— renaming a preset should never be something a player has to notice.
+
+Unlike the older sheets, these turn **anticlockwise** with the frame index, so
+frame *h* is what you see at heading *h* with no `headingOffset` and no
+`invert`: face east and the needle points left, because north is on your left.
+
+#### The demon frame
+
+`PANEL_demons.png` is 149 × 100 with an arched opening that is neither square
+nor centred. Measured off its alpha, the opening runs **x38–135, y30–100**, so
+the dial sits at 58% across and 65% down — the middle of the opening, not the
+middle of the frame — at 45% of the width.
+
+45% rather than the 47% that would exactly fill the arch's 70 rows. A dial sized
+to fit precisely has no margin for the rounding in `layerGeometry`, and at 48px
+it overhung the top of the arch by two rows while looking right at every size
+anyone would check by eye. `dev/test_fit.lua` catches that: it maps the dial's
+rect back into the artwork's own pixels at eight sizes and requires it inside
+the measured arch.
+
+#### The eyes
+
+`PANEL_detail.png` is a source sheet, not an overlay. It carries the eye
+positions as **four single pixels** — two per gargoyle — alongside a `?` button
+that belongs to the original Battlespire panel. Pointed at the overlay machinery
+as it stands it would draw the button and nothing you could see of the eyes.
+
+`dev/build_eye_glow.py` reads the positions out of it and draws
+`PANEL_demons_eyes.png` at four times the frame's resolution, white so the
+overlay tint decides the colour. It separates the eyes from the button by
+cluster size: an eye is one pixel, the button is several hundred.
+
+The glow radius is 2.3 source pixels. The two eyes of one gargoyle are about
+four pixels apart, so much over two merges them into one blob and the creature
+looks cycloptic.
+
+Drive it like any other overlay:
+
+```lua
+I.BSCompass.showOverlay('eyes', { seconds = 2, tint = util.color.hex('ff5a20') })
+```
+
 ### Which way does it turn?
 
 The mapping is:
@@ -223,10 +300,39 @@ game needed:
 - the 36- and 360-frame sheets agree on where north is at every cardinal
 - the texture-size arithmetic that forces a grid above ~180 frames
 
+`dev/test_fit.lua` checks that every preset is where it says it is —
+**225 assertions**, driven through the real module and read off the real widget
+tree:
+
+- every texture a preset names is on disk. A missing one draws nothing at all
+  and the compass simply does not appear, because an absent texture is not an
+  error to MyGUI
+- the needle stays inside the widget at eight sizes from 48 to 1024. Its rect is
+  derived from percentages, so a rounding error at one size and not another is
+  exactly what survives a single spot check
+- the widget keeps the backdrop's aspect, because a stretched frame is the one
+  thing that makes pixel artwork look broken rather than small
+- the dial lands inside the demon frame's **measured** arch, not merely inside
+  its widget
+- the eyes overlay covers the whole frame, so the glows land on the heads
+
+`dev/check_needle_atlas.py` checks the generated sheets themselves — size, that
+frame *h* is frame 0 turned anticlockwise by *h*, that the hub holds still, and
+that no frame is clipped.
+
+The angle is measured by cross-correlating a ring histogram against frame 0's,
+about the **hub** and over the **outer tenth** of the needle only. Both of those
+were learned the hard way: measured about the cell centre, a hub seven pixels
+off reads as anything but a rotation; measured over the whole needle, the RG
+star's eight points correlate equally well at every multiple of 45° and the
+answer is a coin toss.
+
 Run with any Lua 5.3+:
 
 ```bash
 lua dev/test_heading.lua
+bash dev/check_all.sh
+MAGICK=magick python3 dev/check_needle_atlas.py
 ```
 
 `dev/` is not loaded by the game and can be deleted.
