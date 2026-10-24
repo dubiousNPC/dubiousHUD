@@ -158,6 +158,8 @@ it rather than a whole compass redrawn per frame.
 |---|---|---|
 | **DBSpretty** | `DBSpretty_needle_360.png` | `DBSpretty_compass.png`, the engraved dial |
 | **Redguard_Compass** | `RG_needle_360.png` | `RG_compass_frame.png`, the ringed frame |
+| **Redguard_Classic** | `RG_ring_360.png`, the ring itself | — the star rides on top, fixed |
+| **BSCompas_Demons_Wide** | `BSCompasAtlas_360.png`, the Battlespire dial | `PANEL_demons_WIDE_R.png`, the wide cut |
 | **BSCompas_Demons** | `BSCompasAtlas_360.png`, the Battlespire dial | `PANEL_demons.png`, two gargoyles round an arch |
 
 The first two are built by `dev/build_needle_atlas.py` from a single drawing of
@@ -190,40 +192,115 @@ Unlike the older sheets, these turn **anticlockwise** with the frame index, so
 frame *h* is what you see at heading *h* with no `headingOffset` and no
 `invert`: face east and the needle points left, because north is on your left.
 
+#### Redguard_Classic: the ring turns instead
+
+The same two pieces the other way round. The star is fixed and the **ring**
+turns, which is how a compass card actually reads — a fixed lubber line against
+a rotating card.
+
+The ring has to turn the **opposite** way to the needle, and that is not a
+preference. In the needle arrangement the star turns anticlockwise against a
+fixed ring. Hold the star still and the ring must turn **clockwise** by the same
+amount for the angle between them to come out the same. Every sheet this mod
+generates turns anticlockwise with the frame index, so the flip lives in the
+preset as `invert = true` rather than in a second convention for building sheets.
+
+The star rides as `cover`, which is the only static-on-top slot there is.
+
+One thing to know before you pick it: with the star fixed, the ring's red gem
+sits at **+heading** — it tracks which way you are facing rather than pointing
+at north. That is what "the same relation, flipped" means, and it is the right
+behaviour for a card compass. If you would rather the gem marked north, tick
+**Invert Rotation** in the settings; no rebuild needed.
+
 #### The demon frame
 
-`PANEL_demons.png` is 149 × 100 with an arched opening that is neither square
-nor centred. Measured off its alpha, the opening runs **x38–135, y30–100**, so
-the dial sits at 58% across and 65% down — the middle of the opening, not the
-middle of the frame — at 45% of the width.
+Two cuts of it, both 128 tall:
 
-45% rather than the 47% that would exactly fill the arch's 70 rows. A dial sized
-to fit precisely has no margin for the rounding in `layerGeometry`, and at 48px
-it overhung the top of the arch by two rows while looking right at every size
-anyone would check by eye. `dev/test_fit.lua` catches that: it maps the dial's
-rect back into the artwork's own pixels at eight sizes and requires it inside
-the measured arch.
+| Texture | Size | The dial sits at |
+|---|---|---|
+| `PANEL_demons.png` | 191 × 128 | x47–172, filling the arch |
+| `PANEL_demons_WIDE_R.png` | 300 × 128 | x127–252, off to the right |
 
-#### The eyes
+Those figures are not measured off the arch. They are read straight out of
+`PANEL_demons_EXAMPLE101.png` and `PANEL_demons_WIDE_EXAMPLE2.png`, which are
+the author's own placement — **an example is better evidence than a
+measurement**, because it says where the dial was meant to go rather than where
+it would fit. Both examples ship, and `dev/test_fit.lua` asserts the preset puts
+the dial on exactly those pixels at the artwork's own size, not merely somewhere
+inside the opening.
 
-`PANEL_detail.png` is a source sheet, not an overlay. It carries the eye
-positions as **four single pixels** — two per gargoyle — alongside a `?` button
-that belongs to the original Battlespire panel. Pointed at the overlay machinery
-as it stands it would draw the button and nothing you could see of the eyes.
+The anchors are 57.6% and 63.34% rather than the exact midpoints 57.59 and
+63.33. The exact figures land a hair under a whole pixel and `floor()` takes the
+dial one column left of the example. A hundredth of a percent is nothing; being
+a pixel out against the author's own placement is the thing the examples exist
+to prevent.
 
-`dev/build_eye_glow.py` reads the positions out of it and draws
-`PANEL_demons_eyes.png` at four times the frame's resolution, white so the
-overlay tint decides the colour. It separates the eyes from the button by
-cluster size: an eye is one pixel, the button is several hundred.
+#### A frame that draws in front
 
-The glow radius is 2.3 source pixels. The two eyes of one gargoyle are about
-four pixels apart, so much over two merges them into one blob and the creature
-looks cycloptic.
+The frame is the `backdrop` because that is what gives the widget its aspect and
+the dial its rect. But the gargoyles grip the rim of the opening, and hands
+behind the thing they are holding look wrong — so these two presets set
+`frameOnTop`, which draws the backdrop **last**, over the dial. The two jobs are
+separate and only one of them is about stacking.
 
-Drive it like any other overlay:
+The eyes and the orb go on top of that, since they are painted on the frame.
+
+#### Drawing under other HUDs
+
+Inside one UI layer, what draws on top is whatever was created last — which
+comes down to the order the game happened to load the scripts in. That is no way
+to decide whether a 300px frame covers your health vials.
+
+So the compass takes a layer of its own, inserted immediately **below** the one
+it would otherwise have used. Everything on the stock layer — every other HUD
+mod — then draws over it, whatever order the scripts loaded in. The inserted
+layer matches the interactivity of the one it sits under, or **Lock Position**
+would stop working.
+
+**Draw Behind Other HUDs**, on by default. Turn it off for a compass over
+everything instead.
+
+#### The eyes and the orb
+
+A `PANEL_detail` sheet is a source, not an overlay. It holds two different
+things on one canvas:
+
+| | |
+|---|---|
+| **marks** | one pixel each, where a gargoyle's eye is |
+| **orb** | a few hundred pixels of finished art, sitting over the socket in the frame |
+
+Telling them apart by size is not a heuristic that might go wrong: an eye is
+**one** pixel and an orb is several hundred, with nothing in between. Anything
+between the two thresholds is reported rather than guessed at.
+
+`dev/build_eye_glow.py` draws the eyes as glows at four times the frame's
+resolution — blown up to HUD size a single pixel is a square — in white, so the
+overlay tint decides the colour. The orb is taken exactly as drawn, because it
+already is the colour it should be.
+
+Positions are read as **fractions** of the sheet, so a detail sheet and the
+frame it belongs to need not be the same size: the narrow pair are 149 × 100 and
+191 × 128, drawn at different times. What they do have to share is their aspect,
+which is checked — a mark placed by fraction onto a differently proportioned
+canvas lands somewhere else entirely.
+
+The glow radius is 1.8% of the frame's width. The two eyes of one gargoyle are
+about 4% apart, so much over 2% merges them into one blob and the creature looks
+cycloptic.
+
+> **`PANEL_detail_WIDE.png` is a mark short.** It carries three eyes, not four:
+> two on the right gargoyle and one on the left, whose lower socket is visible
+> in the artwork but never lights. The builder warns about it. One white pixel
+> at about **(136, 52)** would finish it — mirroring the right head's pair,
+> which sit at (244, 47) and (240, 52).
+
+Drive either overlay like any other:
 
 ```lua
 I.BSCompass.showOverlay('eyes', { seconds = 2, tint = util.color.hex('ff5a20') })
+I.BSCompass.showOverlay('orb',  { seconds = 2 })
 ```
 
 ### Which way does it turn?

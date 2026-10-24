@@ -69,6 +69,10 @@ for p in "ATLAS_PRESET=BSCompasAtlas" "ATLAS_PRESET=BSCompasAtlas_360" \
          "ATLAS_PRESET=BSCompas_Layered_360" \
          "ATLAS_PRESET=BSCompas_Demons" \
          "ATLAS_PRESET=BSCompas_Demons,COMPASS_SIZE=512" \
+         "ATLAS_PRESET=BSCompas_Demons_Wide" \
+         "ATLAS_PRESET=BSCompas_Demons_Wide,COMPASS_SIZE=640" \
+         "ATLAS_PRESET=Redguard_Classic" \
+         "ATLAS_PRESET=Redguard_Classic,COMPASS_SIZE=512" \
          "ATLAS_PRESET=DBSpretty" "ATLAS_PRESET=DBSpretty,COMPASS_SIZE=512" \
          "ATLAS_PRESET=Redguard_Compass" "ATLAS_PRESET=Redguard_Compass,COMPASS_SIZE=48" \
          "ATLAS_PRESET=RG_Compass" \

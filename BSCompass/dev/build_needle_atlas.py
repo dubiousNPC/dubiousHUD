@@ -60,6 +60,16 @@ JOBS = [
         # 1:1 and nothing is resampled on the way into the sheet.
         'hub': (63.0, 56.1),
     },
+    {
+        # The Redguard ring, for the "classic" arrangement: the outer circle
+        # turns and the star stays still. Its outer silhouette is a circle
+        # centred on the canvas -- the HOLE is four pixels high of that, but a
+        # ring has to turn about its rim or the rim wanders.
+        'src': 'RG_compass_frame.png',
+        'out': 'RG_ring_360.png',
+        'cell': 128,
+        'hub': (63.5, 63.5),
+    },
 ]
 
 

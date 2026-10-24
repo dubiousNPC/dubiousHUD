@@ -154,6 +154,18 @@ settingsTemplate[key] = {
 			default = false,
 		},
 		{
+			key = 'HUD_UNDERLAY',
+			name = 'Draw Behind Other HUDs',
+			description = 'Puts the compass on a layer of its own, below the one every\n'
+				.. 'other HUD mod uses, so a wide frame cannot end up covering\n'
+				.. 'your health vials.\n\n'
+				.. 'Without it, whichever widget was created last draws on top,\n'
+				.. 'which comes down to the order the game loaded the scripts in.\n'
+				.. 'Turn it off if you want the compass over everything instead.',
+			renderer = 'checkbox',
+			default = true,
+		},
+		{
 			key = 'HUD_X_POS',
 			name = 'X Position',
 			description = '',
@@ -260,18 +272,24 @@ settingsTemplate[key] = {
 				.. '                    needle and glass dome, so each can be\n'
 				.. '                    tinted or faded on its own\n'
 				.. 'BSCompas_Demons     the same dial set in the demon frame,\n'
-				.. '                    whose eyes can be lit by the overlay\n'
-				.. '                    below or by another mod\n'
+				.. '                    whose eyes and orb can be lit by the\n'
+				.. '                    overlays below or by another mod\n'
+				.. 'BSCompas_Demons_Wide  the wider cut of that frame, with the\n'
+				.. '                    dial off to the right\n'
 				.. 'DBS_CompassARROW    360 steps, arrow over the DBS corner frame\n'
 				.. 'DBSpretty           needle over the engraved dial\n'
-				.. 'Redguard_Compass    gold star over the ringed frame\n'
+				.. 'Redguard_Compass    gold star turning over a fixed ring\n'
+				.. 'Redguard_Classic    the same two the other way round: the\n'
+				.. '                    ring turns and the star holds still,\n'
+				.. '                    read like a compass card\n'
 				.. 'Custom              use the manual settings below',
 			renderer = R_SELECT,
 			default = 'BSCompasAtlas',
 			argument = selectArg { 'BSCompasAtlas', 'BSCompasAtlas_360',
 			                       'BSCompas_Layered_360', 'BSCompas_Demons',
-			                       'DBS_CompassARROW', 'DBSpretty', 'Redguard_Compass',
-			                       'Custom' },
+			                       'BSCompas_Demons_Wide', 'DBS_CompassARROW',
+			                       'DBSpretty', 'Redguard_Compass',
+			                       'Redguard_Classic', 'Custom' },
 		},
 		{
 			key = 'ATLAS_PATH',
@@ -757,6 +775,7 @@ readAllSettings()
 local REBUILD = {
 	HUD_BORDER = true, HUD_BORDER_STYLE = true, HUD_BORDER_COLOR = true,
 	HUD_PADDING = true, HUD_BACKGROUND = true, HUD_LOCK = true,
+	HUD_UNDERLAY = true,
 	OVERLAY_TINT = true, OVERLAY_ALPHA = true,
 	FACE_TINT = true, FACE_ALPHA = true,
 	COVER_TINT = true, COVER_ALPHA = true,

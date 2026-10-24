@@ -166,8 +166,45 @@ end
 stubs['openmw.ui'] = {
 	TYPE = setmetatable({}, { __index = function(_, k) return 'TYPE.' .. k end }),
 	ALIGNMENT = setmetatable({}, { __index = function(_, k) return 'ALIGN.' .. k end }),
+	-- Real layers, in order, back to front. The old stub answered 1 to every
+	-- indexOf, which made "is my layer already there?" always true and a layer
+	-- insertion impossible to test -- and inserting the same layer twice is
+	-- not a thing to discover in someone else's save.
 	layers = setmetatable({
-		indexOf = function() return 1 end,
+		_names = { 'Scene', 'HUD', 'Windows', 'Notification', 'Modal' },
+		indexOf = function(self, name)
+			if type(self) == 'string' then name = self end
+			for i, n in ipairs(stubs['openmw.ui'].layers._names) do
+				if n == name then return i end
+			end
+			return nil
+		end,
+		insertBefore = function(self, before, name, opts)
+			if type(self) == 'string' then self, before, name, opts = nil, self, before, name end
+			local L = stubs['openmw.ui'].layers
+			for i, n in ipairs(L._names) do
+				if n == before then
+					table.insert(L._names, i, name)
+					L._inserted = L._inserted or {}
+					L._inserted[name] = { before = before, opts = opts }
+					return
+				end
+			end
+			error('insertBefore: no layer named ' .. tostring(before), 2)
+		end,
+		insertAfter = function(self, after, name, opts)
+			if type(self) == 'string' then self, after, name, opts = nil, self, after, name end
+			local L = stubs['openmw.ui'].layers
+			for i, n in ipairs(L._names) do
+				if n == after then
+					table.insert(L._names, i + 1, name)
+					L._inserted = L._inserted or {}
+					L._inserted[name] = { after = after, opts = opts }
+					return
+				end
+			end
+			error('insertAfter: no layer named ' .. tostring(after), 2)
+		end,
 	}, { __index = function() return { size = vec2(1920, 1080) } end }),
 	content = contentList,
 	screenSize = function() return vec2(1920, 1080) end,

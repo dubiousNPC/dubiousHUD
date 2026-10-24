@@ -53,6 +53,13 @@ TEX = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 ATLASES = [
     {'file': 'DBSpretty_needle_360.png', 'cell': 128, 'cols': 30, 'frames': 360},
     {'file': 'RG_needle_360.png', 'cell': 128, 'cols': 30, 'frames': 360},
+    # A ring's rim is the same all the way round, so the shape-based measure
+    # tells you nothing here -- every rotation of a circle looks like every
+    # other. What is NOT symmetric is the single red gem, which R-G separates
+    # cleanly from both the gold and the three green ones, so the ring's angle
+    # is read from where that one gem is.
+    {'file': 'RG_ring_360.png', 'cell': 128, 'cols': 30, 'frames': 360,
+     'by': 'gem'},
 ]
 
 SAMPLES = [0, 1, 23, 45, 90, 137, 180, 211, 270, 315, 359]
@@ -73,9 +80,10 @@ def read_cells(path, cell, cols, frames):
 
 BINS = 360
 OUTER_RING = 0.9     # only ink this far out counts towards the angle
+GEM_CUT = 90         # R - G above this is the red gem and nothing else
 
 
-def frame_stats(raw, sheetw, cell, cols, idx, hub=(0.0, 0.0)):
+def frame_stats(raw, sheetw, cell, cols, idx, hub=(0.0, 0.0), by='shape'):
     """Centroid, total ink, furthest lit pixel, and a ring histogram.
 
     The histogram is ink per degree around the cell centre, weighted towards
@@ -116,6 +124,30 @@ def frame_stats(raw, sheetw, cell, cols, idx, hub=(0.0, 0.0)):
         if d2 >= cut:
             hist[b % BINS] += wgt
     return sx / tot, sy / tot, tot, far, hist
+
+
+def gem_angle(raw, sheetw, cell, cols, idx, hub):
+    """Angle of the red gem about the hub, clockwise from up.
+
+    R - G separates it from the gold, which is red AND green, and from the
+    three green gems, which are the other way round. 133 pixels of the 8691 in
+    the ring pass, and they are all the one gem.
+    """
+    cx0, cy0 = (idx % cols) * cell, (idx // cols) * cell
+    c = (cell - 1) / 2
+    hx, hy = c + hub[0], c + hub[1]
+    sx = sy = n = 0
+    for y in range(cell):
+        row = (cy0 + y) * sheetw * 4
+        for x in range(cell):
+            o = row + (cx0 + x) * 4
+            if raw[o + 3] > 60 and raw[o] - raw[o + 1] > GEM_CUT:
+                sx += x - hx
+                sy += y - hy
+                n += 1
+    if n < 20:
+        return None, n
+    return math.degrees(math.atan2(sx / n, -(sy / n))) % 360, n
 
 
 def best_shift(hist, ref):
@@ -170,19 +202,40 @@ def check(job):
         fails.append('the hub moves %.2fpx between frames -- the needle wobbles '
                      'rather than spinning' % spread)
 
-    base = frame_stats(raw, w, cell, cols, 0, hub)
+    by = job.get('by', 'shape')
+    base_gem = None
+    if by == 'gem':
+        base_gem, n = gem_angle(raw, w, cell, cols, 0, hub)
+        if base_gem is None:
+            return ['%s frame 0 has no red gem to track' % job['file']]
+        print('   gem  %.1f deg from up in frame 0, %d px' % (base_gem, n))
+    base = frame_stats(raw, w, cell, cols, 0, hub, by)
     if base is None:
         return ['%s frame 0 is empty' % job['file']]
-    bx, by, bink, bfar, bhist = base
+    # NOT `by` -- that is the measure this atlas is checked with, and unpacking
+    # a centroid over it turned the gem measure off three lines after it was
+    # chosen, silently, while still printing the gem it had found.
+    _cx, _cy, bink, bfar, bhist = base
 
     for idx in SAMPLES:
-        st = frame_stats(raw, w, cell, cols, idx, hub)
+        st = frame_stats(raw, w, cell, cols, idx, hub, by)
         if st is None:
             fails.append('frame %d is empty' % idx)
             continue
         x, y, ink, far, hist = st
         # anticlockwise by idx: the needle keeps pointing north as you turn
-        ang = best_shift(hist, bhist)
+        if by == 'gem':
+            a, n = gem_angle(raw, w, cell, cols, idx, hub)
+            if a is None:
+                fails.append('frame %d: only %d gem pixels, expected over 20'
+                             % (idx, n))
+                continue
+            # `ang` is how far frame 0 turned CLOCKWISE to become this one,
+            # and the gem's own angle is measured the same way round, so it is
+            # this frame's gem minus frame 0's and not the other way about.
+            ang = round((a - base_gem) % 360)
+        else:
+            ang = best_shift(hist, bhist)
         want = (-idx) % 360
         off = angdiff(ang, want)
         ok_turn = abs(off) <= TOLERANCE_DEG
