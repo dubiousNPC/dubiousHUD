@@ -149,9 +149,14 @@ settingsTemplate[key] = {
 		{
 			key = 'HUD_LOCK',
 			name = 'Lock Position',
-			description = 'Stops click-and-drag repositioning.',
+			description = 'Locked, the widget ignores the mouse and sits under the menus.\n'
+				.. 'Unlock to drag it, then lock again: unlocked, it draws over\n'
+				.. 'every window and takes the clicks meant for what is beneath it.',
 			renderer = 'checkbox',
-			default = false,
+			-- Locked by default, as DBSVials is. Unlocked puts the widget on the
+			-- interactive Modal layer, above the Options window: a click on a control
+			-- under the moon panel did nothing (measured in OpenMW 0.52).
+			default = true,
 		},
 		{
 			key = 'HUD_UNDERLAY',

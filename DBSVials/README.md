@@ -20,9 +20,15 @@ data="path/to/DBSVials"
 content=dbsvials.omwscripts
 ```
 
-No dependencies. SuperSettingsRenderers is bundled, unaltered, under
-`scripts/SuperSettingsRenderers`, so the settings page never relies on a
-separate download.
+**Needs `00 Core`**, from the same dubiousHUD package. It registers the
+SuperSettingsRenderers (sliders, selects and the colour wheel) for all three
+dubiousHUD mods, from one copy, so they can never drift onto different versions.
+Load it first:
+
+```
+data="path/to/dubiousHUD/00 Core"
+content=dbsHUD.omwscripts
+```
 
 Settings live under **dbsHUD - DBSVials**.
 
@@ -40,6 +46,13 @@ Drag either one on its own; each remembers where you put it, and each resizes on
 its own when you click-and-scroll it. Put them in opposite corners if you like.
 
 They share the stat-reading pass and the frame styling, and nothing else.
+
+A setting that reshapes a widget keeps it on screen. Switching the vials to
+Vertical stacks them downward from where the pair sat, and at the default
+position that used to put the stamina vial below the bottom edge, where a locked
+widget could not even be dragged back. After every rebuild each widget is moved,
+only as far as it has to be, until all of it is visible; one taller than the
+screen sits at the top. A position you chose that already fits is left alone.
 
 ---
 
@@ -648,7 +661,7 @@ player:sendEvent('DBSVialsFlashRunes', { seconds = 1.5 })
 - Stat-tracking approach and the discipline of not redrawing a HUD that has not
   changed: [ErnMMUI](https://github.com/erinpentecost/ErnMMUI) by Erin
   Pentecost, AGPL-3.0. No ErnMMUI code is included here.
-- SuperSettingsRenderers, bundled unaltered.
+- SuperSettingsRenderers, bundled unaltered in `00 Core`.
 - Settings page style follows Sun's Dusk, as do MoonHUD and BSCompass.
 
 ---

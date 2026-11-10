@@ -82,9 +82,14 @@ local EXTERNAL_RENDERERS = {
 	SuperColorPicker2 = 'TimeHUD / LocationHUD',
 }
 
--- A renderer only counts as available if the mod BOTH ships the file AND lists
+-- A renderer only counts as available if 00 Core BOTH ships the file AND lists
 -- it as a MENU script. Shipping it without the manifest entry is silent
 -- breakage, so the two are checked separately.
+--
+-- The renderers live once, in 00 Core, beside the mods (CORE_ROOT overrides
+-- where). A copy left in a mod's own folder is reported, not counted: one copy
+-- per mod at the same VFS path is the drift this layout exists to stop.
+local coreRoot = os.getenv('CORE_ROOT') or (modRoot .. '/../00 Core')
 local bundled, manifested = {}, {}
 do
 	local function fileExists(path)
@@ -94,12 +99,16 @@ do
 	end
 
 	for name in pairs(EXTERNAL_RENDERERS) do
-		if fileExists(modRoot .. '/scripts/SuperSettingsRenderers/' .. name .. '.lua') then
+		if fileExists(coreRoot .. '/scripts/SuperSettingsRenderers/' .. name .. '.lua') then
 			bundled[name] = true
+		end
+		if fileExists(modRoot .. '/scripts/SuperSettingsRenderers/' .. name .. '.lua') then
+			print('  WARNING: ' .. name .. '.lua is also shipped inside the mod;'
+				.. ' the renderers belong in 00 Core only')
 		end
 	end
 
-	local pipe = io.popen('ls "' .. modRoot .. '"/*.omwscripts 2>/dev/null')
+	local pipe = io.popen('ls "' .. coreRoot .. '"/*.omwscripts 2>/dev/null')
 	if pipe then
 		for manifest in pipe:lines() do
 			local f = io.open(manifest, 'r')
@@ -153,10 +162,20 @@ stubs['openmw.util'] = {
 }
 
 local function contentList(init)
+	-- The engine's ui.content (resources/lua_libs/content.lua) keeps its
+	-- children at integer keys, so #content and content[i] work on it. The
+	-- children are mirrored there as well as in _items, so code that walks a
+	-- content does here what it does in the game.
 	local c = { _items = {} }
+	local function mirror(self)
+		for i = 1, math.max(#self._items, rawlen and rawlen(self) or 0) + 1 do
+			rawset(self, i, self._items[i])
+		end
+	end
 	for _, v in ipairs(init or {}) do c._items[#c._items + 1] = v end
-	function c:add(v) self._items[#self._items + 1] = v end
-	function c:insert(i, v) table.insert(self._items, i, v) end
+	mirror(c)
+	function c:add(v) self._items[#self._items + 1] = v; mirror(self) end
+	function c:insert(i, v) table.insert(self._items, i, v); mirror(self) end
 	function c:indexOf(v)
 		for i, x in ipairs(self._items) do if x == v then return i end end
 		return nil
@@ -682,6 +701,10 @@ if #record.warnings > 0 then
 			print('  ' .. w)
 		end
 	end
+	-- 00 Core is part of the suite: a renderer it should register and does
+	-- not is a broken settings page, not a note.
+	print('  FAIL: 00 Core does not register these (looked in ' .. coreRoot .. ')')
+	missingRenderers = true
 end
 
 -- Tree helpers for API_SCRIPT tests: findNode/collectNodes reach into the
@@ -830,5 +853,6 @@ if dumpName then
 end
 
 print('')
+if missingRenderers then failures = failures + 1 end
 print(failures == 0 and 'OK' or (failures .. ' failure(s)'))
 os.exit(failures == 0 and 0 or 1)

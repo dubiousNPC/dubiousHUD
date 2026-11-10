@@ -11,22 +11,16 @@ drag-and-scroll gestures, same border textures.
 
 Copy the `BSCompass` folder into your data directories, then in the launcher:
 
-1. **Data Files → Data Directories** → add the folder containing `BSCompass`
-2. **Data Files → Content Files** → tick `bscompass.omwscripts`
+1. **Data Files → Data Directories** → add `00 Core` and `BSCompass`
+2. **Data Files → Content Files** → tick `dbsHUD.omwscripts`, then `bscompass.omwscripts`
 
 Settings live under **Options → Scripts → BSCompass**.
 
 ### Dependencies
 
-**SuperSettingsRenderers** — for the sliders, selects and colour wheel on the
-settings page. If you don't have it, open `scripts/bscompass/BSC_settings.lua` and
-change one line near the top:
-
-```lua
-local SUPER = false
-```
-
-That falls the page back to OpenMW's built-in renderers. Nothing else changes.
+**`00 Core`**, from the same dubiousHUD package. It registers the
+SuperSettingsRenderers (sliders, selects, colour wheel) the settings page uses,
+once for all three dubiousHUD mods.
 
 Nothing else is required.
 
@@ -333,7 +327,7 @@ that's the thing to look at first.
 | Setting | Default | Notes |
 |---|---|---|
 | HUD Display | Always | Always / Interface Only / Hide on Interface / Hide on Dialogue Only / Never |
-| Lock Position | off | Disables click-and-drag |
+| Lock Position | **on** | Unlock to drag it, then lock again. Unlocked, it draws over every window and takes the clicks meant for what is under it |
 | X / Y Position | top right | Also set by dragging |
 | Only display outdoors | **on** | Also means zero per-frame work indoors |
 
@@ -433,11 +427,12 @@ A Lua error while a script loads takes out **both** the settings page and the
 widget, because the whole file stops executing. If neither appears, that is the
 first thing to check.
 
-**SuperSettingsRenderers is bundled**, unaltered, under
-`scripts/SuperSettingsRenderers`, and registered by the `MENU:` lines at the top
-of the `.omwscripts` file. Those lines must come before the `PLAYER:` entries:
-a renderer has to exist by the time a settings group names it. Nothing needs to
-be downloaded separately, and `local SUPER = true` in the settings file is safe.
+**The settings renderers come from `00 Core`.** SuperSettingsRenderers is
+bundled there, unaltered, under `scripts/SuperSettingsRenderers`, and registered
+by the `MENU:` lines in `dbsHUD.omwscripts`. That file must be ticked, and must
+come before this mod's: a renderer has to exist by the time a settings group
+names it. Without `00 Core` the page's sliders, selects and colour wheels have
+nothing to draw them.
 
 If you also run another mod that bundles the same renderers, both copies get
 registered. That is harmless — a duplicate `registerRenderer` is logged and
@@ -450,8 +445,10 @@ ignored, unlike a duplicate settings *group*, which is fatal.
 ```
 
 It stubs the OpenMW API, executes the scripts for real, runs `onInit` and
-`onFrame`, loads the bundled renderers, and cross-checks that every renderer a
-setting names is both **present on disk** and **listed as a MENU script**.
+`onFrame`, loads the renderers from `../00 Core` (or `CORE_ROOT`), and
+cross-checks that every renderer a setting names is both **present in
+`00 Core`** and **listed there as a MENU script**. A renderer missing from
+either fails the check.
 Shipping the file without the manifest entry is silent breakage, so those are
 verified separately. Run it after editing anything under `scripts/`.
 

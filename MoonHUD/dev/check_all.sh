@@ -24,8 +24,8 @@ last=$(echo "$out" | tail -1); echo "  $last"; [ "$last" = OK ] || fail=1
 echo "$out" | grep -E "checks, . failures" || true
 last=$(echo "$out" | tail -1); echo "  $last"; [ "$last" = OK ] || fail=1
 
-echo "--- bundled renderers (MENU scripts)"
-out=$("$LUA" dev/load_check.lua . \
+echo "--- shared renderers (00 Core MENU scripts)"
+out=$("$LUA" dev/load_check.lua "${CORE_ROOT:-../00 Core}" \
     scripts/SuperSettingsRenderers/SuperSlider6.lua \
     scripts/SuperSettingsRenderers/SuperSelect3.lua \
     scripts/SuperSettingsRenderers/SuperColorPicker4.lua \

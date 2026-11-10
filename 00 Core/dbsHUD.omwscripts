@@ -1,0 +1,14 @@
+# dubiousHUD core: shared by DBSVials, MoonHUD and BSCompass.
+#
+# SuperSettingsRenderers, bundled unaltered and kept here ONCE, so the three
+# mods cannot drift onto different copies. They used to ship one copy each, at
+# the same VFS path, so whichever folder loaded last supplied all three.
+#
+# Load this before any dubiousHUD mod: a renderer has to be registered by the
+# time a settings group naming it is registered.
+# demoSettings.lua is deliberately not listed; it only adds a demo page.
+MENU: scripts/SuperSettingsRenderers/SuperSlider6.lua
+MENU: scripts/SuperSettingsRenderers/SuperColorPicker4.lua
+MENU: scripts/SuperSettingsRenderers/SuperKeybind2.lua
+MENU: scripts/SuperSettingsRenderers/SuperSelect3.lua
+MENU: scripts/SuperSettingsRenderers/optionalRenderer1.lua

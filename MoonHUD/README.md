@@ -18,8 +18,11 @@ Requires OpenMW with the Lua `core.weather` moon bindings (API revision ~62+, so
 
 Copy the `MoonHUD` folder into your data directories, then in the launcher:
 
-1. **Data Files → Data Directories** → add the folder containing `MoonHUD`
-2. **Data Files → Content Files** → tick `moonhud.omwscripts`
+1. **Data Files → Data Directories** → add `00 Core` and `MoonHUD`
+2. **Data Files → Content Files** → tick `dbsHUD.omwscripts`, then `moonhud.omwscripts`
+
+`00 Core` comes from the same dubiousHUD package. It registers the settings
+renderers (sliders, selects, colour wheel) all three dubiousHUD mods share.
 
 Settings live under **Options → Scripts → MoonHUD**.
 
@@ -34,7 +37,7 @@ Everything TimeHUD and LocationHUD expose is here, plus a **Moons** group.
 | Setting | Default | Notes |
 |---|---|---|
 | HUD Display | Always | Always / Interface Only / Hide on Interface / Hide on Dialogue Only / Never |
-| Lock Position | off | Disables click-and-drag |
+| Lock Position | **on** | Unlock to drag it, then lock again. Unlocked, it draws over every window and takes the clicks meant for what is under it |
 | X Position / Y Position | 12 / bottom-left | Also set by dragging the widget |
 | Only display outdoors | off | Tracker keeps running regardless |
 | Only display when a moon is up | off | Uses real sky alpha; needs an active exterior |
@@ -77,10 +80,9 @@ Everything TimeHUD and LocationHUD expose is here, plus a **Moons** group.
 Border on/off, style (thin / normal / thick / verythick), colour, padding — the same
 four options and the same textures as TimeHUD, LocationHUD and Quickloot.
 
-> **Colour pickers.** MoonHUD ships with no dependencies, so colours are plain hex
-> text fields. If you have TimeHUD or LocationHUD installed you already have their
-> `SuperColorPicker2` renderer — set `COLOR_RENDERER = 'SuperColorPicker2'` at the
-> top of `MH_settings.lua` for a colour wheel.
+> **Controls.** Every choice is a SuperSelect3 and every number a SuperSlider6
+> with its range, and colours use the SuperColorPicker4 wheel, the same controls
+> as DBSVials and BSCompass. All three come from `00 Core`.
 
 ---
 
@@ -339,11 +341,12 @@ A Lua error while a script loads takes out **both** the settings page and the
 widget, because the whole file stops executing. If neither appears, that is the
 first thing to check.
 
-**SuperSettingsRenderers is bundled**, unaltered, under
-`scripts/SuperSettingsRenderers`, and registered by the `MENU:` lines at the top
-of the `.omwscripts` file. Those lines must come before the `PLAYER:` entries:
-a renderer has to exist by the time a settings group names it. Nothing needs to
-be downloaded separately, and `local SUPER = true` in the settings file is safe.
+**The settings renderers come from `00 Core`.** SuperSettingsRenderers is
+bundled there, unaltered, under `scripts/SuperSettingsRenderers`, and registered
+by the `MENU:` lines in `dbsHUD.omwscripts`. That file must be ticked, and must
+come before this mod's: a renderer has to exist by the time a settings group
+names it. Without `00 Core` the page's sliders, selects and colour wheels have
+nothing to draw them.
 
 If you also run another mod that bundles the same renderers, both copies get
 registered. That is harmless — a duplicate `registerRenderer` is logged and
@@ -356,8 +359,10 @@ ignored, unlike a duplicate settings *group*, which is fatal.
 ```
 
 It stubs the OpenMW API, executes the scripts for real, runs `onInit` and
-`onFrame`, loads the bundled renderers, and cross-checks that every renderer a
-setting names is both **present on disk** and **listed as a MENU script**.
+`onFrame`, loads the renderers from `../00 Core` (or `CORE_ROOT`), and
+cross-checks that every renderer a setting names is both **present in
+`00 Core`** and **listed there as a MENU script**. A renderer missing from
+either fails the check.
 Shipping the file without the manifest entry is silent breakage, so those are
 verified separately. Run it after editing anything under `scripts/`.
 

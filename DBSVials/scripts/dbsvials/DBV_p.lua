@@ -1027,6 +1027,79 @@ local function makeRoot(name, body, section, xKey, yKey, bgOut)
 end
 
 --------------------------------------------------------------------------------
+-- Keeping a widget on screen
+--------------------------------------------------------------------------------
+-- A rebuild can change a widget's shape a long way: Vertical stacks the two
+-- vials, so the stamina vial lands a whole vial below where the pair used to
+-- end, and at the default position that is below the bottom of the screen
+-- (measured at 1600x1200). Locked by default, the player could not even drag it
+-- back without unlocking first. So after every rebuild the widget is moved, if
+-- it has to be, until all of it is on screen.
+--
+-- The UI API reports no computed size, so the extent is read off the layout
+-- that was just built: every piece here carries an explicit size, and the Flex
+-- containers stack them along one axis.
+
+local function extent(layout)
+	if not layout then return 0, 0 end
+	local props = layout.props or {}
+	if props.visible == false then return 0, 0 end
+	if props.size then return props.size.x, props.size.y end
+	if props.relativeSize then return 0, 0 end    -- fills its parent; adds nothing
+	local children = layout.content
+	if not children then return 0, 0 end
+	local w, h = 0, 0
+	if layout.type == ui.TYPE.Flex then
+		local horizontal = props.horizontal == true
+		for i = 1, #children do
+			local cw, ch = extent(children[i])
+			if horizontal then w, h = w + cw, math.max(h, ch)
+			else w, h = math.max(w, cw), h + ch end
+		end
+	else
+		for i = 1, #children do
+			local c = children[i]
+			local cw, ch = extent(c)
+			local p = c.props and c.props.position
+			w = math.max(w, (p and p.x or 0) + cw)
+			h = math.max(h, (p and p.y or 0) + ch)
+		end
+	end
+	return w, h
+end
+
+local function keepOnScreen(root, body, section, xKey, yKey)
+	if not root then return end
+	local layer = ui.layers[ui.layers.indexOf('HUD')]
+	if not (layer and layer.size) then return end
+	local w, h = extent(body)
+	-- padding on both sides, and the border's own width when there is one
+	local margin = 2 * (HUD_PADDING or 0) + (HUD_BORDER and 8 or 0)
+	w, h = w + margin, h + margin
+	local x0, y0 = _G[xKey] or 40, _G[yKey] or 40
+	local x = math.max(0, math.min(x0, layer.size.x - w))
+	local y = math.max(0, math.min(y0, layer.size.y - h))
+	x, y = math.floor(x), math.floor(y)
+	if x ~= x0 or y ~= y0 then
+		root.layout.props.position = v2(x, y)
+		root:update()
+		-- The globals now, so a cheap restyle before the write lands cannot put
+		-- the widget back where it was.
+		_G[xKey], _G[yKey] = x, y
+		-- Storage on the next tick. A rebuild usually runs INSIDE this section's
+		-- own subscription handler (VIAL_SIZE, VIAL_LENGTH are in it), and the
+		-- engine refuses a handler that writes the section it handles. Position
+		-- keys take the cheap path, so the write itself rebuilds nothing.
+		-- While a menu pauses the game the timer waits; the widget has already
+		-- moved, and the next load clamps again if the game is quit first.
+		async:newUnsavableSimulationTimer(0, function()
+			section:set(xKey, x)
+			section:set(yKey, y)
+		end)
+	end
+end
+
+--------------------------------------------------------------------------------
 -- Build
 --------------------------------------------------------------------------------
 
@@ -1070,14 +1143,17 @@ function buildVialsHud()
 		local out = {}
 		vialsHud = makeRoot('vialsHud', body, vialSection, 'VIAL_X_POS', 'VIAL_Y_POS', out)
 		vialsBackground = out[1]
+		keepOnScreen(vialsHud, body, vialSection, 'VIAL_X_POS', 'VIAL_Y_POS')
 	end
 
 	-- --- the runes -------------------------------------------------------
 	if SHOW_RUNES ~= false then
 		local out = {}
-		runesHud = makeRoot('runesHud', buildRunes(), runeSection,
+		local runesBody = buildRunes()
+		runesHud = makeRoot('runesHud', runesBody, runeSection,
 			'RUNE_X_POS', 'RUNE_Y_POS', out)
 		runesBackground = out[1]
+		keepOnScreen(runesHud, runesBody, runeSection, 'RUNE_X_POS', 'RUNE_Y_POS')
 	end
 
 	-- Force the next update to apply everything to the fresh tree.

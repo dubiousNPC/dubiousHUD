@@ -21,8 +21,8 @@ run_script() {   # <label> <test file>
 
 run_script "vials, runes and the public interface" dev/test_vials.lua
 
-echo "--- bundled renderers (MENU scripts)"
-out=$("$LUA" dev/load_check.lua . \
+echo "--- shared renderers (00 Core MENU scripts)"
+out=$("$LUA" dev/load_check.lua "${CORE_ROOT:-../00 Core}" \
     scripts/SuperSettingsRenderers/SuperSlider6.lua \
     scripts/SuperSettingsRenderers/SuperSelect3.lua \
     scripts/SuperSettingsRenderers/SuperColorPicker4.lua \
@@ -238,6 +238,43 @@ for n in 8 9 16 24 32; do
         fail=1
     fi
 done
+
+# A setting that reshapes a widget must not push it off the screen. Vertical
+# stacks the vials, so at the default position the stamina vial used to land
+# below the bottom edge. Read off the tree: the root's position plus the
+# extent of what it holds has to fit the stub's 1920x1080 HUD layer, unless the
+# widget is taller than the screen, in which case it sits at the top.
+echo "--- reshaped widgets stay on screen"
+for cfg in "LAYOUT=Horizontal" "LAYOUT=Vertical" "LAYOUT=Vertical,VIAL_SIZE=380" \
+           "LAYOUT=Vertical,VIAL_SIZE=600" "RUNE_LENGTH=32" "RUNE_LENGTH=32,RUNE_SIZE=64"; do
+    bad=
+    for root in vialsHud runesHud; do
+        tree=$(PRESEED="$cfg" DUMP_TREE=$root "$LUA" dev/load_check.lua . \
+            scripts/dbsvials/DBV_p.lua 2>&1)
+        pos=$(echo "$tree" | grep -E "^$root " | grep -oE 'pos=\([0-9-]+,[0-9-]+' | grep -oE '[0-9-]+,[0-9-]+')
+        if [ -z "$pos" ]; then bad="$bad $root:not-built"; continue; fi
+        y=${pos#*,}
+        if [ "$root" = vialsHud ]; then
+            h=$(echo "$tree" | grep -E '^    (health|stamina)Vial ' | grep -oE 'size=\([0-9]+,[0-9]+' \
+                | grep -oE '[0-9]+$' | awk -v v="$cfg" '{ s += $1; m = ($1 > m) ? $1 : m }
+                    END { print (v ~ /Vertical/) ? s : m }')
+        else
+            h=$(echo "$tree" | grep -E '^  runeColumn ' | grep -oE 'size=\([0-9]+,[0-9]+' | grep -oE '[0-9]+$')
+        fi
+        bottom=$((y + h))
+        if [ "$h" -gt 1080 ]; then
+            [ "$y" = 0 ] || bad="$bad $root:taller-than-screen-but-y=$y"
+        elif [ "$bottom" -gt 1080 ] || [ "$y" -lt 0 ]; then
+            bad="$bad $root:y=$y+h=$h"
+        fi
+    done
+    if [ -z "$bad" ]; then printf '  %-36s OK\n' "$cfg"
+    else printf '  %-36s FAIL%s\n' "$cfg" "$bad"; fail=1; fi
+done
+default=$(DUMP_TREE=vialsHud "$LUA" dev/load_check.lua . scripts/dbsvials/DBV_p.lua 2>&1 \
+    | grep -E '^vialsHud ' | grep -oE 'pos=\([0-9-]+,[0-9-]+')
+if [ "$default" = 'pos=(1744,696' ]; then echo "  default position untouched          OK"
+else echo "  FAIL: the default layout was moved: $default"; fail=1; fi
 
 echo "--- stat extremes"
 for st in "health=0,stamina=0,magicka=0" "health=1,stamina=1,magicka=1" \
