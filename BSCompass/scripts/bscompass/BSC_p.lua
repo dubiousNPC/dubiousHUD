@@ -39,10 +39,6 @@ local ATLAS_PRESETS = {
 		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
 		overlayAspect = 1,
 	},
-	-- A needle on a dial. The needle atlas is a full-canvas rotation of the
-	-- artwork it was drawn on, so `overlayScale = 100` with the anchors in the
-	-- middle lays the two back over each other exactly as drawn and there is
-	-- nothing to line up by hand.
 	['DBSpretty'] = {
 		path = 'textures/bscompass/DBSpretty_needle_360.png',
 		frames = 360, cols = 30, cell = 128,
@@ -50,13 +46,6 @@ local ATLAS_PRESETS = {
 		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
 		overlayAspect = 1,
 	},
-	-- The same arrangement, and the reason the needle is cut out of its ring
-	-- rather than drawn in it: RG_compass.png is the two composed, and the
-	-- frame plus the needle reproduce it to within antialiasing.
-	--
-	-- Its star is NOT centred on its canvas -- the hub sits about thirty pixels
-	-- high in the 512 square -- which is why the atlas turns about the hub and
-	-- keeps the canvas, rather than being cropped to the needle.
 	['Redguard_Compass'] = {
 		path = 'textures/bscompass/RG_needle_360.png',
 		frames = 360, cols = 30, cell = 128,
@@ -64,74 +53,28 @@ local ATLAS_PRESETS = {
 		overlayAnchorX = 50, overlayAnchorY = 50, overlayScale = 100,
 		overlayAspect = 1,
 	},
-	-- The same artwork the other way round: the ring turns and the star stays
-	-- still, which is how a compass card actually reads -- a fixed lubber line
-	-- against a rotating card.
-	--
-	-- `invert` is not decoration. In the needle arrangement the star turns
-	-- anticlockwise against a fixed ring; hold the star still and the ring has
-	-- to turn CLOCKWISE by the same amount to keep the relation between them
-	-- the same. Every atlas this mod generates turns anticlockwise with the
-	-- frame index, so the flip belongs here rather than in a second convention
-	-- for building sheets.
-	--
-	-- The star rides as `cover`, which is drawn over the turning layer and is
-	-- the only static-on-top slot there is.
 	['Redguard_Classic'] = {
 		path = 'textures/bscompass/RG_ring_360.png',
 		frames = 360, cols = 30, cell = 128,
 		invert = true,
 		cover = 'textures/bscompass/RG_compass_needle.png',
 	},
-	-- The Battlespire dial in a demon frame, 191x128.
-	--
-	-- The figures below are not measured off the arch any more. They are read
-	-- straight out of PANEL_demons_EXAMPLE101.png, which is the author's own
-	-- placement. An example is better evidence than a measurement of the hole
-	-- the dial goes in, because it says where the dial was MEANT to go rather
-	-- than where it would fit.
-	--
-	-- The dial covers pixels x47..172 and y0..126, which is 126 x 127 of a
-	-- 191 x 128 canvas with its centre at (110, 63.5) -- in EDGES, where a
-	-- pixel spans from its index to the next. Taking 172 as the right edge
-	-- rather than 173 is half a pixel of error at 128 and most of one at a
-	-- size anyone plays at.
-	--
-	-- 57.6 rather than 57.59, and 63.34 rather than 63.33 on the wide cut.
-	-- The exact midpoints land a hair under a whole pixel and floor() takes
-	-- the dial one column left of where the example puts it. A hundredth of a
-	-- percent is nothing; being a pixel out against the author's own placement
-	-- is the thing the examples exist to prevent.
-	--
-	-- 66 is the example exactly: 126 of 191. It can be the exact figure now
-	-- that layerGeometry clamps the rect -- before the clamp, a dial this
-	-- close to the full height of the frame had to be shaved to stay inside.
 	['BSCompas_Demons'] = {
 		path = 'textures/bscompass/BSCompasAtlas_360.png',
 		frames = 360, cols = 30, cell = 88,
 		backdrop = 'textures/bscompass/PANEL_demons.png',
-		-- drawn OVER the dial: the gargoyles grip the rim of the
-		-- opening, and hands behind the thing they are holding look wrong
 		frameOnTop = true,
 		overlayAnchorX = 57.6, overlayAnchorY = 49.61, overlayScale = 66,
 		overlayAspect = 191 / 128,
-		-- PANEL_detail carries the eye positions as single pixels and the orb
-		-- as drawn art; dev/build_eye_glow.py separates them.
 		overlays = {
 			eyes = 'textures/bscompass/PANEL_demons_eyes.png',
 			orb  = 'textures/bscompass/PANEL_demons_orb.png',
 		},
 	},
-	-- The wider cut of the same frame, 300x128, where the dial sits off to the
-	-- right and the orb socket is on the other side. Placement read out of
-	-- PANEL_demons_WIDE_EXAMPLE1/2: the dial covers x127..252, so 126 wide
-	-- centred on edge 190 of 300.
 	['BSCompas_Demons_Wide'] = {
 		path = 'textures/bscompass/BSCompasAtlas_360.png',
 		frames = 360, cols = 30, cell = 88,
 		backdrop = 'textures/bscompass/PANEL_demons_WIDE_R.png',
-		-- drawn OVER the dial: the gargoyles grip the rim of the
-		-- opening, and hands behind the thing they are holding look wrong
 		frameOnTop = true,
 		overlayAnchorX = 63.34, overlayAnchorY = 49.61, overlayScale = 42,
 		overlayAspect = 300 / 128,
@@ -169,10 +112,6 @@ local ATLAS_PRESET_ORDER = { 'BSCompasAtlas', 'BSCompasAtlas_360',
                              'BSCompas_Demons_Wide', 'DBS_CompassARROW',
                              'DBSpretty', 'Redguard_Compass', 'Redguard_Classic' }
 
---- Old preset names that still have to resolve.
---- A preset name is stored in the save, so renaming one silently drops anyone
---- who had it selected back to the default. One line here costs nothing and
---- means a rename is never a thing a player has to notice.
 local ATLAS_PRESET_ALIASES = { RG_Compass = 'Redguard_Compass' }
 
 local borderTemplates = require('scripts.bscompass.BSC_border')
@@ -190,10 +129,6 @@ local compassHud = nil
 local compassImage        = nil    -- the layout table, poked directly
 local tiles               = {}     -- pre-built ui.texture, 1-based
 local tileCount           = 0
--- The two atlas figures the per-frame path needs. atlasGeometry() builds and
--- returns a fresh eighteen-field table, and tileForHeading was calling it every
--- sampled frame for these two scalars -- a garbage table a frame for nothing.
--- They only change when the tiles are rebuilt, so that is where they are read.
 local tileHeadingOffset   = 0
 local tileInvert          = false
 local currentTile         = -1
@@ -214,16 +149,6 @@ local DEG_PER_RAD = 180 / math.pi
 --------------------------------------------------------------------------------
 -- Layer
 --------------------------------------------------------------------------------
--- Inside one layer, what draws on top is whatever was created last, which comes
--- down to the order the game happened to load the scripts in. That is no way to
--- decide whether a compass frame covers another mod's health vials.
---
--- So the compass gets a layer of its own, inserted immediately BELOW the one it
--- would have used. Everything on the stock layer -- every other HUD mod -- then
--- draws over it, whatever order the scripts loaded in.
---
--- Inserted once and remembered: ui.layers is global, and inserting the same
--- name twice is not something to find out about in someone else's save.
 local ownLayers = {}
 
 local function compassLayer()
@@ -232,8 +157,6 @@ local function compassLayer()
 	local name = 'BSCompassUnder' .. base
 	if not ownLayers[name] then
 		if ui.layers.indexOf(name) == nil then
-			-- the stock Scene layer takes no mouse events, which is what makes
-			-- HUD_LOCK a lock; ours has to match or locking would stop working
 			ui.layers.insertBefore(base, name, { interactive = base ~= 'Scene' })
 		end
 		ownLayers[name] = true
@@ -298,13 +221,6 @@ end
 --------------------------------------------------------------------------------
 -- Layers
 --------------------------------------------------------------------------------
--- Up to three stacked images, all sized from one figure so the whole assembly
--- scales together:
---
---   backdrop  static frame or housing, fills the widget
---   face      static dial art, placed and scaled inside the backdrop
---   arrow     the rotating atlas frame, placed and scaled inside the backdrop
---   cover     static art drawn OVER the arrow, fills the widget
 --
 
 local function layerGeometry()
@@ -319,12 +235,6 @@ local function layerGeometry()
 		L.arrowSize = math.max(4, math.floor(L.width * (geo.overlayScale or 20) / 100))
 		L.arrowX = math.floor(L.width  * (geo.overlayAnchorX or 50) / 100 - L.arrowSize / 2)
 		L.arrowY = math.floor(L.height * (geo.overlayAnchorY or 50) / 100 - L.arrowSize / 2)
-		-- Kept inside the widget. The anchors are percentages and the rect is
-		-- floored, so a layer meant to sit a fraction of a pixel inside the
-		-- edge lands a whole pixel OUTSIDE it, and a parent that clips its
-		-- children takes a row off the artwork for it. It only ever bites by
-		-- a pixel, and only where the layer nearly fills the frame -- which
-		-- the demon frames both do.
 		L.arrowX = math.max(0, math.min(L.width  - L.arrowSize, L.arrowX))
 		L.arrowY = math.max(0, math.min(L.height - L.arrowSize, L.arrowY))
 		if geo.face then
@@ -387,13 +297,6 @@ end
 --------------------------------------------------------------------------------
 -- Cardinal overlays
 --------------------------------------------------------------------------------
--- Lights the N/E/S/W glyph on the dial as you come round to face it. Two bands:
--- inside the sharp arc the solid art is drawn, between sharp and fade arcs the
--- fade art is drawn and its opacity ramps off with distance.
---
--- The ramp is quantised to ALPHA_STEPS so a slow turn does not force an element
--- update on every single frame. Sixteen steps is smooth to the eye and bounds
--- the work to sixteen updates per approach.
 
 local CARDINAL_POINTS = { { 'N', 0 }, { 'E', 90 }, { 'S', 180 }, { 'W', 270 } }
 local ALPHA_STEPS = 16
@@ -613,11 +516,6 @@ function createCompassHud()
 			stack:add(compassImage)
 			if backdropElement then stack:add(backdropElement) end
 		elseif geo.frameOnTop then
-			-- The backdrop still decides the geometry -- it is what gives the
-			-- widget its aspect and the dial its rect -- but it is drawn last,
-			-- so the frame's hands and wings close over the dial instead of
-			-- being hidden behind it. The two jobs are separate and only one
-			-- of them is about stacking.
 			if faceElement then stack:add(faceElement) end
 			stack:add(compassImage)
 			if backdropElement then stack:add(backdropElement) end
@@ -827,14 +725,6 @@ end))
 --   local I = require('openmw.interfaces')
 --   I.BSCompass.setOverlay('eyes', { duration = 8 })
 --   I.BSCompass.clearOverlay('eyes')
---
--- From a script that cannot see the interface -- a global script, or another
--- mod that would rather not hard-depend -- send the player an event instead:
---
---   player:sendEvent('BSCompass_SetOverlay', { name = 'eyes', duration = 8 })
---
--- Unknown names are ignored rather than raising, so a mod can offer to light an
--- overlay the current artwork does not define without needing to check first.
 
 local interface
 

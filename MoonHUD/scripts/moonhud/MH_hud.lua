@@ -28,9 +28,6 @@ local borderTemplates = require('scripts.moonhud.MH_makeborder')
 
 local generalSection    = storage.playerSection('Settings' .. MODNAME .. 'General')
 local appearanceSection = storage.playerSection('Settings' .. MODNAME .. 'Appearance')
--- Background Opacity is registered in the Panel group, so it is the Panel
--- section that has to be written. It used to be written to Appearance, where
--- nothing reads it, and the Shift+wheel gesture silently did nothing.
 local panelSection      = storage.playerSection('Settings' .. MODNAME .. 'Panel')
 
 require('scripts.moonhud.MH_settings')
@@ -148,11 +145,6 @@ local function backgroundImage(name, sizeProps)
 	if not validPath(path) then path = 'black' end
 	local tex = ui.texture { path = path }
 
-	-- MyGUI repeats a texture at its native size unless told otherwise, so
-	-- these two decide between a material that tiles and a picture that fills.
-	-- Getting it the wrong way round is not subtle: a tiled picture shows its
-	-- own border running through the middle of the panel, and a stretched
-	-- material is the same grain at the wrong scale.
 	local tiles
 	if BACKGROUND_FIT == 'Tile' then
 		tiles = true
@@ -675,9 +667,6 @@ function refreshUiVisibility()
 		visible = false
 	end
 
-	-- Guarded, as BSCompass does it. refreshUiVisibility is reached from
-	-- onFrame, from the tail of every display update and from ToggleHUD, so an
-	-- unconditional update is a MyGUI round trip per frame for nothing.
 	if moonHud.layout.props.visible ~= visible then
 		moonHud.layout.props.visible = visible
 		moonHud:update()

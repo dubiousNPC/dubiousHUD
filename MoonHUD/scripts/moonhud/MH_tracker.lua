@@ -40,10 +40,6 @@ local saveData = {
 }
 
 local engineAvailable = nil   -- nil = untested, then true/false
--- Declared up here, not beside the table it is assigned to. checkForChanges
--- runs long before that point in the file and reads it; as a local declared
--- later it resolved to a nil GLOBAL instead, so every firing of the timer threw
--- and the Shade event never fired.
 local interface
 
 local lastShadeActive = nil
@@ -59,8 +55,6 @@ local lastResultHour  = nil
 -- Day index
 --------------------------------------------------------------------------------
 
--- Our own day counter. It differs from the engine's DaysPassed by an unknown but
--- CONSTANT offset, which the calibration step below solves for.
 local function currentDayIndex()
 	local t = calendar.gameTime()
 	if type(t) ~= 'number' then return nil end
@@ -96,11 +90,6 @@ local function readEngine()
 		return nil
 	end
 
-	-- self.cell is nil while a save is loading, and passing nil is the one call
-	-- shape that could reasonably raise. Checked explicitly rather than wrapped
-	-- in pcall: a genuine engine fault should surface, not be mistaken for
-	-- "the binding is broken, stop trying" and silently demote the mod to its
-	-- fallback tier for the rest of the session.
 	local cell = self.cell
 	if cell == nil then return nil end
 
@@ -399,8 +388,6 @@ interface = {
 	--- { active, daysUntil, date = {year, month, day}, dateString, todayString }
 	--- or nil if the calendar is unreadable.
 	getShade = function()
-		-- Counted in days passed, not located on the calendar. The date is
-		-- only carried along so the almanac has something to print.
 		local idx = currentDayIndex()
 		if idx == nil then return nil end
 		local y, m, d = currentDate()

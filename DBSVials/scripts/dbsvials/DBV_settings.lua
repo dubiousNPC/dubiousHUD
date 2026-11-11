@@ -66,15 +66,9 @@ local SCREEN_H     = math.floor(hudLayerSize.y)
 local presetColors = { 'FFFFFF', 'C41C1C', '2EA83A', '4840F0',
                        'E0821E', '3C8BD9', 'caa560' }
 
---- A position default that keeps its corner at any resolution. The author's own
---- placement was measured on a 1920x1080 screen; stored as a distance from the
---- right and bottom edges it lands in the same place on every other one.
 local function fromRight(px) return math.max(0, SCREEN_W - px) end
 local function fromBottom(px) return math.max(0, SCREEN_H - px) end
 
---- Groups appear in the order they are declared. A leading group is padded so
---- it reads as the banner for the ones under it -- the trick SDsettings uses,
---- and the only one the settings API gives us for a visual break.
 local BANNER = string.rep(' ', 40)
 
 local orderCounter = 0
@@ -797,10 +791,6 @@ group('Frame', 'Frame' .. BANNER,
 --------------------------------------------------------------------------------
 -- Carrying old settings across
 --------------------------------------------------------------------------------
--- A group IS a storage section, so regrouping the page moves settings between
--- sections and an existing install would come back on the defaults. Anything
--- the new section has not got yet is taken from wherever it used to live, once,
--- before anything subscribes. Nobody loses their configuration to a reshuffle.
 
 local LEGACY = {
 	'Settings' .. MODNAME .. 'Vials',
@@ -808,9 +798,6 @@ local LEGACY = {
 	'Settings' .. MODNAME .. 'Access',
 }
 
---- Settings that have no old counterpart to copy, only one to compute from.
---- Rune Size replaced a column height and a column width; the height is what
---- carries over, divided by the eight runes it used to describe.
 local DERIVE = {
 	RUNE_SIZE = function(get)
 		local h = get('RUNE_HEIGHT')
@@ -904,10 +891,6 @@ readAllSettings()
 --------------------------------------------------------------------------------
 -- Change classes
 --------------------------------------------------------------------------------
--- Two kinds of change: one that alters the shape of the widget tree and needs it
--- built again, and one that only alters a colour or an opacity, which is a
--- property write on elements that already exist. Everything not listed here
--- takes the cheap path.
 
 local REBUILD = {
 	-- the frame the widgets sit in
